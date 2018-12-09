@@ -1,0 +1,4 @@
+/home/bartek/Documents/cpp/SK-BSD-client-server-game/client/CMakeFiles/rebuild_cache.dir
+/home/bartek/Documents/cpp/SK-BSD-client-server-game/client/CMakeFiles/l6_z1.dir
+/home/bartek/Documents/cpp/SK-BSD-client-server-game/client/CMakeFiles/edit_cache.dir
+/home/bartek/Documents/cpp/SK-BSD-client-server-game/client/CMakeFiles/l6_z1_autogen.dir
