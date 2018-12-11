@@ -37,11 +37,15 @@ int chooseGameNumber(int _fd, int _game, int chosenGame, char * str);
 
 void startGameAndGetLetter(int _game, char * buffer);
 
+void setClientsLetter(int _game, char letter);
+
 uint16_t readPort(char * txt);
 
 void setReuseAddr(int sock);
 
-bool isWordCorrect(char data[20], char letter);
+int wordCorrect(char * data, char letter);
+
+int calculatePoints(int correct, char letter);
 
 
 class Game {
@@ -81,11 +85,18 @@ class Client : public Handler{
     
 public:
     int _game;
+    int _points;
+    int _rank;
+    int _correct;
+    char _currentLetter;
 
     Client(int fd) : _fd(fd) {
         epoll_event ee {EPOLLIN|EPOLLRDHUP, {.ptr=this}};
         epoll_ctl(epollFd, EPOLL_CTL_ADD, _fd, &ee);
         _game = 0;
+        _points = 0;
+        _rank = 0;
+        _correct = 0;
     }
     virtual ~Client(){
         epoll_ctl(epollFd, EPOLL_CTL_DEL, _fd, nullptr);
@@ -113,12 +124,12 @@ public:
     // }
 
     void read(){
-        char dataFromRead[100];
-        char dataFirst4[3];
+        char dataFromRead[60];
+        char dataFirst4[4];
         int len = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
         if (len < 0) perror("read failed");
 
-        for (int i=0; i<4; i++) dataFirst4[i] = dataFromRead[i];
+        for (int i=0; i<6; i++) dataFirst4[i] = dataFromRead[i];
         printf("client: %d \t READ: %s \n", _fd, dataFirst4);
 
         // przypisanie numeru gry
@@ -131,9 +142,34 @@ public:
         }
         // wystartowanie gry - inkrementacja numeru rundy i wyslanie litery
         else if (dataFirst4[0] == 'S'){
-            char buffer[2];
+            char buffer[2];           
             startGameAndGetLetter(_game, buffer);
+            setClientsLetter(_game, buffer[1]);
             sendToAllInGame(_game, buffer); 
+            
+        }
+        // otrzymanie odpowiedzi
+        else if (dataFirst4[0] == 'A'){
+            _correct = wordCorrect(dataFirst4, _currentLetter);
+            _points += calculatePoints(_correct, dataFirst4[1]);
+            if (dataFirst4[1] == 'F'){
+                char buffer[2];
+                sprintf(buffer, "T");
+                sendToAllInGame(_game, buffer);
+            }
+        }
+        // otrzymanie informacji o koniecznosci wyslania wynikow
+        else if (dataFirst4[0] == 'P'){           
+            char * buffer;
+            buffer[0] = 'W';
+            sendToAllInGame(_game, buffer);
+        }
+        // wyslanie wynikow
+        else if (dataFirst4[0] == 'W'){
+            char buffer[6];
+            int points = _points + 100;
+            sprintf(buffer, "P%d%d", _correct, points);
+            write(buffer);
         }
 
         //sendToAllInGame(_fd, _game, dataFirst4);
@@ -340,11 +376,31 @@ void startGameAndGetLetter(int _game, char * buffer){
     }
 }
 
+void setClientsLetter(int _game, char letter){
+    for(Client * client : clients){
+        if (_game == client->game() ){
+            client->_currentLetter = letter;
+        }
+    }
+}
 
 /* sprawdz czy slowo zaczyna sie na odpowiednia litere */
-bool isWordCorrect(char data[20], char letter){
-    if (data[0] == letter) return true; 
-    else return false; 
+int wordCorrect(char * data, char letter){
+    int correct = 0;
+    for(int i=2; i<6; i++){
+        if (data[i]==letter) correct++;
+    }
+    return correct;
+}
+
+
+/* oblicz punkty na podstawie szybkosci odpowiedzi */
+int calculatePoints(int correct, char letter){
+    int points = 0;
+    if (letter=='F') points=correct*3;
+    else if (letter=='S') points=correct*2;
+    else if (letter=='T') points=correct;
+    return points;
 }
 
 

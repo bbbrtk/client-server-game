@@ -5,6 +5,7 @@
 #include <QTcpSocket>
 #include <QTimer>
 #include <QLineEdit>
+#include <unistd.h>
 
 namespace Ui {
 class MyWidget;
@@ -49,6 +50,8 @@ protected:
 private:
     Ui::MyWidget * ui;
     int count;
+    QString speedState; // F - first, S - second, T - third, X - answers sent
+    bool isMaster;
 
 
 };

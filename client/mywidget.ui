@@ -155,6 +155,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="reloadGamesBtn">
+        <property name="text">
+         <string>Reload</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="chooseGameBtn">
         <property name="enabled">
          <bool>false</bool>

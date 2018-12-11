@@ -49,7 +49,7 @@ void MyWidget::socketConnected(){
     connTimeoutTimer->stop();
     connTimeoutTimer->deleteLater();
     ui->msgsTextEdit->append("<b>Connected</b>");
-    ui->talkGroup->setEnabled(true);
+    isMaster = false;
 }
 
 
@@ -69,12 +69,10 @@ QString MyWidget::showAndJoinInput(QList<QLineEdit*> qLineEditList){
 
         if ( qLineEditList.at(i)->text().isEmpty() ) text = "-";
         else text = qLineEditList.at(i)->text().trimmed();
-
         mainText += " | " + text;
         mainStr += text.at(0);
     }
     ui->msgsTextEdit->append("<span style=\"color: blue\">" + mainText + "</span>");
-    //ui->msgsTextEdit->setAlignment(Qt::AlignRight);
     return mainStr;
 }
 
@@ -124,6 +122,15 @@ void MyWidget::startTimerCounting(){
         countingTimer->deleteLater();
         // dezaktywuj pole wpisywania tekstu
         ui->talkGroup->setEnabled(false);
+
+        if(speedState == "S"){
+            sendBtnHit();
+        }
+        if(isMaster){
+            usleep(300000); // sleep for 0.3s
+            QString str = "P";
+            socket->write(str.toUtf8());
+        }
     }
 }
 
@@ -132,6 +139,8 @@ void MyWidget::startTimerCounting(){
 /* (!)TODO: coś ładniejszego zamiast if-else */
 void MyWidget::analyzeRead(QByteArray ba) {
     QChar signalStr = QString::fromUtf8(ba).trimmed().at(0);
+
+    ui->msgsTextEdit->append(QString::fromUtf8(ba).trimmed());
 
     // DO USUNIECIA
     if (signalStr == 'A'){
@@ -182,6 +191,7 @@ void MyWidget::analyzeRead(QByteArray ba) {
     else if (signalStr == 'N'){
         QChar n1 = QString::fromUtf8(ba).trimmed().at(1);
         QChar n2 = QString::fromUtf8(ba).trimmed().at(2);
+
         QString number = QString(n1)+QString(n2);
 
         ui->msgsTextEdit->append("Game number " + number + " selected.");
@@ -190,12 +200,14 @@ void MyWidget::analyzeRead(QByteArray ba) {
 
     // wyswietl punkty i wyniki
     else if (signalStr == 'P'){
-        ui->msgsTextEdit->append("Check your score.");
         QChar correct = QString::fromUtf8(ba).trimmed().at(1);
-        QChar points = QString::fromUtf8(ba).trimmed().at(2);
-        QChar rank = QString::fromUtf8(ba).trimmed().at(3);
+        QChar n1 = QString::fromUtf8(ba).trimmed().at(2);
+        QChar n2 = QString::fromUtf8(ba).trimmed().at(3);
+        QChar n3 = QString::fromUtf8(ba).trimmed().at(4);
+        if  (n1 == '1') n1 = '0';
 
-        QString infoBox = "Correct: " + QString(correct) + "/4, points: " + QString(points) + ", rank: " + QString(rank) + ".";
+        QString points = QString(n1)+QString(n2)+QString(n3);
+        QString infoBox = "Correct: " + QString(correct) + "/4, points: " + points + ".";
 
         QMessageBox::information(this, "Score", infoBox);
     }
@@ -205,6 +217,8 @@ void MyWidget::analyzeRead(QByteArray ba) {
         QChar letter = QString::fromUtf8(ba).trimmed().at(1);
 
         ui->startGameBtn->setEnabled(false);
+        ui->talkGroup->setEnabled(true);
+
         ui->msgsTextEdit->clear();
         ui->msgsTextEdit->append("Round started! Your letter is " + QString(letter) + ".");
         ui->letterLabel->setText(letter);
@@ -214,8 +228,16 @@ void MyWidget::analyzeRead(QByteArray ba) {
 
     // 10 sekund do końca
     else if (signalStr == 'T'){
+        if (speedState != "X") speedState = "S";
         ui->msgsTextEdit->append("10 sec left...");
+
         createTimer(false);
+    }
+
+    // chce otrzymac wyniki
+    else if (signalStr == 'W'){
+        QString str = "W";
+        socket->write(str.toUtf8());
     }
 
     // obsluga niestandardowych komunikatów
@@ -269,6 +291,8 @@ void MyWidget::connectBtnHit(){
 /* obsługa przycisku Choose Game */
 void MyWidget::chooseGameBtnHit(){
     QString str = ui->chooseGameList->currentItem()->text();
+    speedState = "F";
+
     if(str=="New Game"){
         str = "G00";
         socket->write(str.toUtf8());
@@ -283,6 +307,7 @@ void MyWidget::chooseGameBtnHit(){
 /* obsługa przycisku Start Game (uruchamiany tylko przez mastera) */
 void MyWidget::startGameBtnHit(){
     QString str = "S";
+    isMaster = true;
     socket->write(str.toUtf8());
 }
 
@@ -293,11 +318,13 @@ void MyWidget::sendBtnHit(){
     lineEditList.append(ui->msgLineEdit); lineEditList.append(ui->msgLineEdit2);
     lineEditList.append(ui->msgLineEdit3); lineEditList.append(ui->msgLineEdit4);
 
-    QString str = showAndJoinInput(lineEditList);
-
-    /* wysłanie danych do serwera i wyczyszczenie pól */
+    if (speedState == "S" && count == 0) speedState = "T"; // time passed and answers still not sent
+    QString str = "A" + speedState + showAndJoinInput(lineEditList);
+    str = str.toUpper();
     socket->write(str.toUtf8());
+    speedState = "X";
 
+    ui->talkGroup->setEnabled(false);
     clearInputFields(lineEditList);
 }
 
