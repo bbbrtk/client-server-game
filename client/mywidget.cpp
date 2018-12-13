@@ -9,42 +9,41 @@
 MyWidget::MyWidget(QWidget *parent) : QWidget(parent), ui(new Ui::MyWidget) {
     ui->setupUi(this);
 
+    // element, (wskaźnik na funkcje), this(?) - referencja na obiekty, patrz niżej (ui->sendBtn), zaimplementowana metoda
     connect(ui->conectBtn, &QPushButton::clicked, this, &MyWidget::connectBtnHit);
     connect(ui->hostLineEdit, &QLineEdit::returnPressed, ui->conectBtn, &QPushButton::click);
-    // element, (wskaźnik na funkcje), this(?) - referencja na obiekty, patrz niżej (ui->sendBtn), zaimplementowana metoda
+
     connect(ui->sendBtn, &QPushButton::clicked, this, &MyWidget::sendBtnHit);
     connect(ui->msgLineEdit, &QLineEdit::returnPressed, ui->sendBtn, &QPushButton::click);
 
+    connect(ui->reloadGameBtn, &QPushButton::clicked, this, &MyWidget::reloadGameBtnHit);
     connect(ui->chooseGameBtn, &QPushButton::clicked, this, &MyWidget::chooseGameBtnHit);
     connect(ui->startGameBtn, &QPushButton::clicked, this, &MyWidget::startGameBtnHit);
     connect(ui->quitBtn, &QPushButton::clicked, this, &MyWidget::quitBtnHit);
-    // konwersja tablicy bajtów na stringi
-    //char buffer[255] => QByteArray ba
-    //auto txt = QString::from(fromUtf8(ba))
 
-    //include <QLabeL>
     //QLabel *q = new QLabel(text, referencja_do_rodzica) - zeby korzystaz z automatycznego zwalniania pamieci
-
-    //error - zajrzec do dokumentacji
-    //laczenie sygnalu z funckja, a potem connect
 }
 
 
-/*sprawdzenie czy gniazda sieciowe są prawidłowo zamknięte */
+//*******************************************
+//                  SOCKETS
+//*******************************************
+
+/* check if sockets are closed */
 MyWidget::~MyWidget() {
     socket->disconnectFromHost();
     delete ui;
 }
 
 
-/* obsługa odłączenia od servera */
+/* handle: disconnect from server*/
 void MyWidget::socketDisconnected() {
     socket->disconnectFromHost();
     ui->msgsTextEdit->append("<span style=\"color: red\">Disconnected from server</span>");
 }
 
 
-/* aktualizacja GUI po podłączeniu do serwera */
+/* update GUI after socket connection */
 void MyWidget::socketConnected(){
     connTimeoutTimer->stop();
     connTimeoutTimer->deleteLater();
@@ -53,31 +52,52 @@ void MyWidget::socketConnected(){
 }
 
 
-/* odczytywanie sygnału z serwera */
+/* try to connect and show timeout if fail */
+void MyWidget::tryToConnect(){
+    connTimeoutTimer = new QTimer(this);
+    connTimeoutTimer->setSingleShot(true);
+
+    connect(
+        connTimeoutTimer,
+        &QTimer::timeout,
+        [&]{
+            connTimeoutTimer->deleteLater();
+            ui->connectGroup->setEnabled(true);
+            ui->msgsTextEdit->append("<b>Connect timed out</b>");
+            QMessageBox::critical(this, "Error", "Connect timed out");
+        }
+    );
+    connTimeoutTimer->start(3000); // try to connect to server for 3 sec
+}
+
+
+/* read from server */
 void MyWidget::socketReadyRead() {
     QByteArray ba;
     ba = socket->readAll();
-    ui->msgsTextEdit->append(QString::fromUtf8(ba).trimmed() ); // wyświetlanie odebranego tekstu w INFO PANEL
     analyzeRead(ba);
 }
 
 
-/* wyświetlenie danych */
+//*******************************************
+//                   GUI
+//*******************************************
+
+/* modify and show user input from text fields */
 QString MyWidget::showAndJoinInput(QList<QLineEdit*> qLineEditList){
     QString text, mainText, mainStr;
     for (int i=0; i<4; i++){
-
         if ( qLineEditList.at(i)->text().isEmpty() ) text = "-";
         else text = qLineEditList.at(i)->text().trimmed();
         mainText += " | " + text;
-        mainStr += text.at(0);
+        mainStr += text.at(0); // only first letter
     }
     ui->msgsTextEdit->append("<span style=\"color: blue\">" + mainText + "</span>");
     return mainStr;
 }
 
 
-/* wyczyszczenie pól do wpisywania danych */
+/* clear text fields */
 void MyWidget::clearInputFields(QList<QLineEdit*> qLineEditList){
     for (int i=0; i<4; i++){
         qLineEditList.at(i)->clear();
@@ -85,9 +105,10 @@ void MyWidget::clearInputFields(QList<QLineEdit*> qLineEditList){
     }
 }
 
-/* wyzerowanie timera */
-void MyWidget::clearTimerCounting(int seconds, bool isFirstTimer){
-    if( countingTimer->isActive() && !isFirstTimer){
+
+/* reset old timer and set new*/
+void MyWidget::clearTimerCounting(int seconds){
+    if( countingTimer->isActive() ){
         countingTimer->stop();
         countingTimer->deleteLater();
     }
@@ -96,16 +117,18 @@ void MyWidget::clearTimerCounting(int seconds, bool isFirstTimer){
 }
 
 
-/* stworzenie timera */
-void MyWidget::createTimer(bool isFirstTimer){
+/* create and set timer */
+void MyWidget::createTimer(bool isFirstTimer, int seconds){
+    // main timer
     if (isFirstTimer){
         countingTimer = new QTimer(this);
-        clearTimerCounting(30, true);
+        clearTimerCounting(seconds);
         connect(countingTimer, &QTimer::timeout, this, &MyWidget::startTimerCounting);
         countingTimer->start(1000);
     }
+    // 10-sec timer
     else{
-        clearTimerCounting(10, false);
+        clearTimerCounting(seconds);
         countingTimer = new QTimer(this);
         connect(countingTimer, &QTimer::timeout, this, &MyWidget::startTimerCounting);
         countingTimer->start(1000);
@@ -113,158 +136,173 @@ void MyWidget::createTimer(bool isFirstTimer){
 }
 
 
-/* odliczanie timerem do zera */
+/* timer counting to 0 */
 void MyWidget::startTimerCounting(){
     count--;
-    ui->timerNumber->display(count);
+    if (count>=0) ui->timerNumber->display(count);
+
     if (count==0){
-        countingTimer->stop();
-        countingTimer->deleteLater();
-        // dezaktywuj pole wpisywania tekstu
+
+
         ui->talkGroup->setEnabled(false);
 
-        if(speedState == "S"){
-            sendBtnHit();
-        }
+        if(speedState == "S") sendBtnHit();
+
+//        if(isMaster){
+//            usleep(300000); // sleep for 0.3 sec
+//            QString str2 = "P";
+//            socket->write(str2.toUtf8());
+//        }
+    }
+    else if (count==-1){
+        countingTimer->stop();
+        countingTimer->deleteLater();
+
         if(isMaster){
-            usleep(300000); // sleep for 0.3s
-            QString str = "P";
-            socket->write(str.toUtf8());
+            usleep(300000); // sleep for 0.3 sec
+            QString str2 = "P";
+            socket->write(str2.toUtf8());
         }
     }
 }
 
 
-/* analiza komunikatu wysłanego przez serwer */
-/* (!)TODO: coś ładniejszego zamiast if-else */
-void MyWidget::analyzeRead(QByteArray ba) {
-    QChar signalStr = QString::fromUtf8(ba).trimmed().at(0);
+//*******************************************
+//                   HANDLE
+//*******************************************
 
-    ui->msgsTextEdit->append(QString::fromUtf8(ba).trimmed());
+void MyWidget::handleListOfGames(QString str){
+    ui->startGameBox->setEnabled(true);
+    ui->chooseGameBtn->setEnabled(true);
 
-    // DO USUNIECIA
-    if (signalStr == 'A'){
-        ui->msgsTextEdit->clear();
-        ui->msgsTextEdit->append("some default text");
-    }
+    ui->chooseGameList->clear();
+    ui->chooseGameList->addItem("New Game");
+    ui->chooseGameList->setCurrentRow(0);
+    QString gNumber = "";
+    QChar n1;
 
-    // odbiera listę dostępnych gier
-    if (signalStr == 'C'){
-        ui->startGameBox->setEnabled(true);
-        ui->chooseGameBtn->setEnabled(true);
-        ui->chooseGameList->addItem("New Game");
-        ui->chooseGameList->setCurrentRow(0);
-
-        QString str = QString::fromUtf8(ba).trimmed();
-        QString gNumber = "";
-
-        for (int i=1; i<str.length(); i++){
-            QChar n1 = QString::fromUtf8(ba).trimmed().at(i);
-            if (n1 != ',') {
-                gNumber += QString(n1);
-            }
-            else{
-                ui->chooseGameList->addItem(gNumber);
-                gNumber = "";
-            }
+    for (int i=1; i<str.length(); i++){
+        n1 = str.at(i);
+        if (n1 != ',') gNumber += QString(n1);
+        else{
+            ui->chooseGameList->addItem(gNumber);
+            gNumber = "";
         }
     }
+}
 
-    // potwierdzenie wyboru gry
-    else if (signalStr == 'G'){
-        QChar n1 = QString::fromUtf8(ba).trimmed().at(1);
-        QChar n2 = QString::fromUtf8(ba).trimmed().at(2);
-        QChar n3 = QString::fromUtf8(ba).trimmed().at(3);
 
-        QString number = QString(n1)+QString(n2);
-        ui->gameNumberLabel->setText(number);
+void MyWidget::handleGameNumber(QString str){
+    QChar n1 = str.at(1);
+    QChar n2 = str.at(2);
+    QChar n3 = str.at(3);
+    QString number = QString(n1)+QString(n2);
 
-        ui->startGameBox->setEnabled(false);
-        // if client is Game Master
-        if(n3=='M') ui->startGameBtn->setEnabled(true);
+    ui->gameNumberLabel->setText(number);
+    ui->startGameBox->setEnabled(false);
+    ui->msgsTextEdit->clear();
+    ui->msgsTextEdit->append("Game n." + number + " is ready to start!");
 
-        ui->msgsTextEdit->clear();
-        ui->msgsTextEdit->append("Game n." + number + " is ready to start!");
-    }
+    // if client is Game Master
+    if(n3=='M') ui->startGameBtn->setEnabled(true);
+}
 
-    // numer gry
-    else if (signalStr == 'N'){
-        QChar n1 = QString::fromUtf8(ba).trimmed().at(1);
-        QChar n2 = QString::fromUtf8(ba).trimmed().at(2);
 
-        QString number = QString(n1)+QString(n2);
+void MyWidget::handleNewRound(QString str){
+    speedState = "F";
 
-        ui->msgsTextEdit->append("Game number " + number + " selected.");
-        ui->gameNumberLabel->setText(number);
-    }
+    QChar letter = str.at(1);
 
-    // wyswietl punkty i wyniki
-    else if (signalStr == 'P'){
-        QChar correct = QString::fromUtf8(ba).trimmed().at(1);
-        QChar n1 = QString::fromUtf8(ba).trimmed().at(2);
-        QChar n2 = QString::fromUtf8(ba).trimmed().at(3);
-        QChar n3 = QString::fromUtf8(ba).trimmed().at(4);
-        if  (n1 == '1') n1 = '0';
+    ui->startGameBtn->setEnabled(false);
+    ui->talkGroup->setEnabled(true);
+    ui->msgsTextEdit->clear();
+    ui->msgsTextEdit->append("Round started! Your letter is " + QString(letter) + ".");
+    ui->letterLabel->setText(letter);
 
-        QString points = QString(n1)+QString(n2)+QString(n3);
-        QString infoBox = "Correct: " + QString(correct) + "/4, points: " + points + ".";
+    createTimer(true, 30);
+}
 
-        QMessageBox::information(this, "Score", infoBox);
-    }
 
-    // start rundy i otrzymanie litery
-    else if (signalStr == 'R'){
-        QChar letter = QString::fromUtf8(ba).trimmed().at(1);
+void MyWidget::handle10secTimer(){
+    if (speedState != "X") speedState = "S";
+    ui->msgsTextEdit->append("10 sec left...");
 
-        ui->startGameBtn->setEnabled(false);
-        ui->talkGroup->setEnabled(true);
+    createTimer(false, 10);
+}
 
-        ui->msgsTextEdit->clear();
-        ui->msgsTextEdit->append("Round started! Your letter is " + QString(letter) + ".");
-        ui->letterLabel->setText(letter);
 
-        createTimer(true);
-    }
+void MyWidget::handleWantMyScore(){
+    QString str = "W";
+    socket->write(str.toUtf8());
+}
 
-    // 10 sekund do końca
-    else if (signalStr == 'T'){
-        if (speedState != "X") speedState = "S";
-        ui->msgsTextEdit->append("10 sec left...");
 
-        createTimer(false);
-    }
+void MyWidget::handleShowMyScore(QString str){
+    QChar correct = str.at(1);
+    QChar n1 = str.at(2);
+    QChar n2 = str.at(3);
+    QChar n3 = str.at(4);
 
-    // chce otrzymac wyniki
-    else if (signalStr == 'W'){
-        QString str = "W";
+    // converstion points=points-100 [0:299] to maintain constant length of msg from server
+    if  (n1 == '1') n1 = '0';
+
+    QString points = QString(n1)+QString(n2)+QString(n3);
+    QString infoBox = "Correct: " + QString(correct) + "/4, points: " + points + ".";
+    QMessageBox::information(this, "Score", infoBox); // popup
+
+    if (isMaster){
+        usleep(5000000); // sleep for 5 sec
+        QString str = "B"; // start next round
         socket->write(str.toUtf8());
     }
-
-    // obsluga niestandardowych komunikatów
-    else if (signalStr == 'X'){
-
-    }
 }
 
 
-/* obsługa błę10dów */
-//void MyWidget::socketError(QAbstractSocket::SocketError socketError) {}
+void MyWidget::handleOtherStuff(){
+
+}
+
+//*******************************************
+//               ANALYZE READ
+//*******************************************
+
+/* decide what to do with server msg */
+void MyWidget::analyzeRead(QByteArray ba) {
+    QString str = QString::fromUtf8(ba).trimmed();
+    QChar signalStr = str.at(0);
+
+    //ui->msgsTextEdit->append(QString::fromUtf8(ba).trimmed());  // show msg from server
+
+    // get list of games -> show
+    if (signalStr == 'C') handleListOfGames(str);
+
+    // get game number -> show
+    else if (signalStr == 'G') handleGameNumber(str);
+
+    // get round letter -> show and start timer
+    else if (signalStr == 'R') handleNewRound(str);
+
+    // get 'first successful sent' msg -> set timer to 10 sec left
+    else if (signalStr == 'T') handle10secTimer();
+
+    // get 'want score' msg -> send 'want my score' request
+    else if (signalStr == 'W') handleWantMyScore();
+
+    // get score -> show points, wait 5 sec, start new round
+    else if (signalStr == 'P') handleShowMyScore(str);
+
+    // azerstaf
+    else if (signalStr == 'X') handleOtherStuff();
+}
 
 
-/* obsługa przycisku Connect */
+//*******************************************
+//                  BUTTONS
+//*******************************************
+
 void MyWidget::connectBtnHit(){
     ui->connectGroup->setEnabled(false);
     ui->msgsTextEdit->append("<b>Connecting to " + ui->hostLineEdit->text() + ":" + QString::number(ui->portSpinBox->value())+"</b>");
-
-    /* zostało zrobione:
-     *  - stworzyć gniazdo
-     *  - połączyć zdarzenia z funkcjami je obsługującymi:
-     *     • zdarzenie połączenia     (do funkcji socketConnected)
-     *     • zdarzenie odbioru danych (stworzyć własną funkcję)
-     *     • zdarzenie rozłączenia    (stworzyć własną funkcję)
-     *     • zdarzenie błędu          (stworzyć własną funkcję) (uwaga: sprawdź składnię w pomocy)
-     *  - zażądać (asynchronicznego) nawiązania połączenia
-     */
 
     socket = new QTcpSocket(this);
 
@@ -272,47 +310,33 @@ void MyWidget::connectBtnHit(){
     connect(socket, &QTcpSocket::disconnected, this, &MyWidget::socketDisconnected);
     connect(socket, &QTcpSocket::readyRead, this, &MyWidget::socketReadyRead);
     //connect(socket, &QTcpSocket::error ,this, &MyWidget::socketError);
-
     socket->connectToHost(ui->hostLineEdit->text(),ui->portSpinBox->value(),QIODevice::ReadWrite,QAbstractSocket::IPv4Protocol);
     
-    connTimeoutTimer = new QTimer(this);
-    connTimeoutTimer->setSingleShot(true);
-    connect(connTimeoutTimer, &QTimer::timeout, [&]{
-        /* TODO: przerwać próbę łączenia się do gniazda */
-        connTimeoutTimer->deleteLater();
-        ui->connectGroup->setEnabled(true);
-        ui->msgsTextEdit->append("<b>Connect timed out</b>");
-        QMessageBox::critical(this, "Error", "Connect timed out");
-    });
-    connTimeoutTimer->start(3000);
+    tryToConnect();
 }
 
 
-/* obsługa przycisku Choose Game */
-void MyWidget::chooseGameBtnHit(){
-    QString str = ui->chooseGameList->currentItem()->text();
-    speedState = "F";
-
-    if(str=="New Game"){
-        str = "G00";
-        socket->write(str.toUtf8());
-    }
-    else{
-        str = "G" + str;
-        socket->write(str.toUtf8());
-    }
-}
-
-
-/* obsługa przycisku Start Game (uruchamiany tylko przez mastera) */
-void MyWidget::startGameBtnHit(){
-    QString str = "S";
-    isMaster = true;
+void MyWidget::reloadGameBtnHit(){
+    QString str = "L";
     socket->write(str.toUtf8());
 }
 
 
-/* obsługa przycisku Send */
+void MyWidget::chooseGameBtnHit(){
+    QString str = ui->chooseGameList->currentItem()->text();
+    if(str=="New Game") str = "G00";
+    else str = "G" + str;
+    socket->write(str.toUtf8());
+}
+
+
+void MyWidget::startGameBtnHit(){
+    QString str = "S";
+    isMaster = true;
+    socket->write(str.toUtf8()); // send by master
+}
+
+
 void MyWidget::sendBtnHit(){
     QList<QLineEdit*> lineEditList;
     lineEditList.append(ui->msgLineEdit); lineEditList.append(ui->msgLineEdit2);
@@ -322,16 +346,19 @@ void MyWidget::sendBtnHit(){
     QString str = "A" + speedState + showAndJoinInput(lineEditList);
     str = str.toUpper();
     socket->write(str.toUtf8());
-    speedState = "X";
+    speedState = "X"; // answers sent, change state
 
     ui->talkGroup->setEnabled(false);
     clearInputFields(lineEditList);
 }
 
-
-/* obsługa przycisku Quit */
-/* (!)TODO: co należy zamknąć? */
+/* TODO */
 void MyWidget::quitBtnHit(){
     MyWidget::close();
 }
 
+//*******************************************
+//                  OTHER
+//*******************************************
+
+//void MyWidget::socketError(QAbstractSocket::SocketError socketError) {}

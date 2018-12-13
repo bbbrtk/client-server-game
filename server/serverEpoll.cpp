@@ -48,6 +48,8 @@ int wordCorrect(char * data, char letter);
 int calculatePoints(int correct, char letter);
 
 
+// *************** CLASSES ******************
+
 class Game {
     int _gameNumber;
     char _letter;
@@ -69,7 +71,7 @@ class Game {
 
         void getNewLetter(){
             _roundNumber++;
-            _letter = char ( rand()%(90-65+1)+65 );
+            _letter = char ( rand()%(90-65+1)+65 ); // leter from ascii A to Z
         }
 };
 
@@ -109,80 +111,90 @@ public:
 
     virtual void handleEvent(uint32_t events) override {
         if(events & EPOLLIN) {
-            read();
+            read(events);
         }
         if(events & ~EPOLLIN){
             remove();
         }
     }
 
-    // char * data = new char[10];
-    // void read(char* data){
-    //     int len = ::read(_fd, data, sizeof(data)-1);
-    //     if (len < 0) perror("read failed");
-    //     //printf("client: %d \t text: %s \n", _fd, data);
-    // }
-
-    void read(){
+    void read(uint32_t events){
         char dataFromRead[60];
-        char dataFirst4[4];
-        int len = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
-        if (len < 0) perror("read failed");
+        char data[5];
 
-        for (int i=0; i<6; i++) dataFirst4[i] = dataFromRead[i];
-        printf("client: %d \t READ: %s \n", _fd, dataFirst4);
+        ssize_t count  = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
+        if(count <= 0) events |= EPOLLERR;
 
-        // przypisanie numeru gry
-        //  dodac sprawdzanie czy odebrano poprawny numer
-        if (dataFirst4[0] == 'G'){
-            int chosenGame = (dataFirst4[1] - '0')*10 + (dataFirst4[2] - '0');
+        // get only first 6 most important chars
+        for (int i=0; i<6; i++) data[i] = dataFromRead[i];
+        printf("client: %d \t READ: %s \n", _fd, data);
+
+        // handle ReloadGameBtn
+        if (data[0] == 'L'){
+            sendListOfGames(_fd);
+        }
+
+        // set game number
+        // TODO: check if data[1] data[2] are numbers
+        else if (data[0] == 'G'){
+            int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
             char str[4];
             _game = chooseGameNumber(_fd, _game, chosenGame, str);
             write(str);            
         }
-        // wystartowanie gry - inkrementacja numeru rundy i wyslanie litery
-        else if (dataFirst4[0] == 'S'){
+
+        // start game
+        else if (data[0] == 'S'){
             char buffer[2];           
             startGameAndGetLetter(_game, buffer);
             setClientsLetter(_game, buffer[1]);
             sendToAllInGame(_game, buffer); 
-            
         }
-        // otrzymanie odpowiedzi
-        else if (dataFirst4[0] == 'A'){
-            _correct = wordCorrect(dataFirst4, _currentLetter);
-            _points += calculatePoints(_correct, dataFirst4[1]);
-            if (dataFirst4[1] == 'F'){
+
+        // get answers, send 10-sec-timer msg
+        else if (data[0] == 'A'){
+            _correct = wordCorrect(data, _currentLetter);
+            _points += calculatePoints(_correct, data[1]);
+
+            if (data[1] == 'F'){
                 char buffer[2];
                 sprintf(buffer, "T");
                 sendToAllInGame(_game, buffer);
             }
         }
-        // otrzymanie informacji o koniecznosci wyslania wynikow
-        else if (dataFirst4[0] == 'P'){           
+
+        // send allowance to request score 
+        else if (data[0] == 'P'){           
             char * buffer;
             buffer[0] = 'W';
             sendToAllInGame(_game, buffer);
         }
-        // wyslanie wynikow
-        else if (dataFirst4[0] == 'W'){
+
+        // send score
+        else if (data[0] == 'W'){
             char buffer[6];
             int points = _points + 100;
             sprintf(buffer, "P%d%d", _correct, points);
             write(buffer);
         }
 
-        //sendToAllInGame(_fd, _game, dataFirst4);
+        // start new round
+        else if (data[0] == 'B'){
+            char buffer[2];           
+            startGameAndGetLetter(_game, buffer);
+            setClientsLetter(_game, buffer[1]);
+            sendToAllInGame(_game, buffer); 
+        }
     }
 
-    // naprawic tak jak bylo domyslnie
+    // fix to default option
     void write(char * buffer){
         int check = ::write(_fd, buffer, strlen(buffer));
         if(check != (int) strlen(buffer)) perror("write failed");
         printf("client: %d \t WRITE: %s \n", _fd, buffer);
     }
 
-    // dodac eleganckie usuwanie gry, ktorej gracz byl masterem
+    // TODO
     void remove() {
         printf("removing %d\n", _fd);
         clients.erase(this);
@@ -215,7 +227,8 @@ class : Handler {
 } servHandler;
 
 
-/* __MAIN___ */
+// *************** MAIN  ******************
+
 int main(int argc, char ** argv){
     if(argc != 2) error(1, 0, "Need 1 arg (port)");
     auto port = readPort(argv[1]);
@@ -251,10 +264,12 @@ int main(int argc, char ** argv){
         // LOL
         ((Handler*)ee.data.ptr)->handleEvent(ee.events);
 
-        printf("____next_commands: \n");
+        printf("_____next_while_iteration_____: \n");
     }
 }
 
+
+// *************** SOCKETS ******************
 
 uint16_t readPort(char * txt){
     char * ptr;
@@ -280,7 +295,8 @@ void ctrl_c(int){
 }
 
 
-/*  wyslij 'buffer' do wszystkich graczy */
+// *************** SEND TO CLIENTS ******************
+
 void sendToAll(char * buffer){
     auto it = clients.begin();
     while(it!=clients.end()){
@@ -292,7 +308,6 @@ void sendToAll(char * buffer){
 }
 
 
-/*  wyslij 'buffer' do wszystkich graczy oprocz gracza o danym fd */
 void sendToAllBut(int fd, char * buffer){
     auto it = clients.begin();
     while(it!=clients.end()){
@@ -304,7 +319,6 @@ void sendToAllBut(int fd, char * buffer){
 }
 
 
-/*  wyslij 'buffer' do wszystkich graczy w grze o danym numerze*/
 void sendToAllInGame(int game, char * buffer){
     auto it = clients.begin();
     while(it!=clients.end()){
@@ -316,7 +330,6 @@ void sendToAllInGame(int game, char * buffer){
 }
 
 
-/*  wyslij liste wszystkich aktualnie dostepnych gier */
 void sendListOfGames(int clientFd){
     std::string buffer = "C" ;
     for(Game * game : games){
@@ -326,20 +339,21 @@ void sendListOfGames(int clientFd){
     }
     char tab[100];
     strcpy(tab, buffer.c_str());
+
     int check = write(clientFd, tab, strlen(tab));
     if(check != (int) strlen(tab)) perror("write failed");
 }
 
 
-/*  przypisz graczowi numer gry w zaleznosci od tego 
-*   czy tworzy nowa (staje sie masterem) czy jest dodawany do istniejacej 
-*   dodac sprawdzanie czy wyslano poprawnie
-*/
+// *************** GAME ******************
+
+/*  set game number: if new game - become master and add to game, else - add to existing game */
 int chooseGameNumber(int _fd, int _game, int chosenGame, char * str){
     int maxGameNumber = 10;
     
+    // check if game exist
     for(Game * game : games){
-        // jesli gra istnieje
+        // game exist
         if(chosenGame == game->gameNumber()){
             _game = chosenGame;
             sprintf(str, "G%dU", _game );
@@ -348,24 +362,21 @@ int chooseGameNumber(int _fd, int _game, int chosenGame, char * str){
         if (maxGameNumber < game->gameNumber()) maxGameNumber = game->gameNumber();
     }
 
-    // jesli ma byc utworzona nowa gra
+    // if new game
     if (chosenGame==0 && _game==0){
-        games.insert(new Game(maxGameNumber+1, _fd) );
+        games.insert( new Game(maxGameNumber+1, _fd) );
         _game = maxGameNumber+1;
         sprintf(str, "G%dM", _game );
     }
 
-    // jesli numer gry jest niepoprawny
-    else if (chosenGame!=0 && _game==0){
-        sendListOfGames(_fd); 
-        }
+    // if number game is incorrect
+    else if (chosenGame!=0 && _game==0) sendListOfGames(_fd); 
 
     printf("client: %d \t myGame: %d \n", _fd, _game);
     return _game;
 }
 
 
-/* wystartuj gre i wylosuj litere dla danej rundy */
 void startGameAndGetLetter(int _game, char * buffer){
     for(Game * game : games){
         if (_game == game->gameNumber() ){
@@ -376,6 +387,7 @@ void startGameAndGetLetter(int _game, char * buffer){
     }
 }
 
+
 void setClientsLetter(int _game, char letter){
     for(Client * client : clients){
         if (_game == client->game() ){
@@ -384,7 +396,7 @@ void setClientsLetter(int _game, char letter){
     }
 }
 
-/* sprawdz czy slowo zaczyna sie na odpowiednia litere */
+
 int wordCorrect(char * data, char letter){
     int correct = 0;
     for(int i=2; i<6; i++){
@@ -394,63 +406,14 @@ int wordCorrect(char * data, char letter){
 }
 
 
-/* oblicz punkty na podstawie szybkosci odpowiedzi */
 int calculatePoints(int correct, char letter){
     int points = 0;
     if (letter=='F') points=correct*3;
     else if (letter=='S') points=correct*2;
-    else if (letter=='T') points=correct;
+    else if (letter=='T')points=correct;
+
     return points;
 }
 
 
-/* UNUSED FUNCTIONS
-
-* * * * * *
-
-
-
-* * * * * *
-
-for(Client * client : clients){
-    client->read();
-    //printf("fd %d \t", client->fd());
-}
-
-* * * * * *
-
-char * info;   
-char data[21]{};
-
-while(true){
-    int len = read(clientFd, data, sizeof(data)-1);
-    bool isCorrect = isWordCorrect(data,'p');
-    if (isCorrect){
-        printf("recieved:\t %s",data);
-        printf("is correct?:\t %d\n",isCorrect);
-        info = (char*)'c'; // due to warning: ISO C++ forbids converting a string constant to ‘char*
-        ///sendToAll(info,strlen(info));
-
-        //int count = write(clientFd, info, strlen(info));
-        //if(count != (int) strlen(info)) perror("write failed");
-    }
-}
-
-* * * * * *
-* IN HANDLE EVENT *
-char buffer[256];
-ssize_t count = ::read(_fd, buffer, 256);
-if(count > 0)
-    sendToAllBut(_fd, buffer, count);
-else
-    events |= EPOLLERR;
-
-* * * * * *
-
-
-* * * * * *
-
-
-* * * * * *
-*/
 

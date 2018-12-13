@@ -20,29 +20,35 @@ public:
     ~MyWidget();
 
 protected:
-    /* TODO: Dodać zmienną reprezentująca gniazdo - wskaźnik na  QTcpSocket */
-    QTimer * connTimeoutTimer;
-    QTimer * countingTimer; // clock
+    QTimer * connTimeoutTimer; // connection timeout
+    QTimer * countingTimer; // game clock
     QTcpSocket * socket;
 
     void connectBtnHit();
-    void sendBtnHit();
+    void reloadGameBtnHit();
     void chooseGameBtnHit();
     void startGameBtnHit();
+    void sendBtnHit();
     void quitBtnHit();
 
     void socketDisconnected();
-
     void socketReadyRead();
-    void analyzeRead(QByteArray);
-
-    void socketError();
-    
+    void socketError(); // unused
     void socketConnected();
+    void tryToConnect();
 
-    void createTimer(bool);
-    void clearTimerCounting(int, bool);
+    void createTimer(bool, int);
+    void clearTimerCounting(int);
     void startTimerCounting();
+
+    void analyzeRead(QByteArray);
+    void handleListOfGames(QString);
+    void handleGameNumber(QString);
+    void handleNewRound(QString);
+    void handle10secTimer();
+    void handleWantMyScore();
+    void handleShowMyScore(QString);
+    void handleOtherStuff(); // unused
 
     QString showAndJoinInput(QList<QLineEdit*>);
     void clearInputFields(QList<QLineEdit*>);
