@@ -4,7 +4,23 @@
 #include <QLabel>
 #include <QMessageBox>
 
+/*
+    TODO
+ *
+ *  auto-close points popup / show points in INFO PANEL
+ *  sum up points and present rank
+ *
+ *  delete master with deleting game (reset _game in Clinet class, refresh client GUI, delete Game instance, delete master)
+ *  add client during game (chooseGame, send timer.time request to master, receive timer.time, set new timer, play)
+ *
+ *  handleDisconnectedFromServer (show popup msg, reset timer, reset text field, refresh GUI )
+ *  handleDeleteMyGame (show popup msg, reset timer, reset text field, refresh GUI)
+ *  handlNetworkDelays (?)
+ *
+ *  socketError()
+ *
 
+*/
 
 MyWidget::MyWidget(QWidget *parent) : QWidget(parent), ui(new Ui::MyWidget) {
     ui->setupUi(this);
@@ -123,16 +139,15 @@ void MyWidget::createTimer(bool isFirstTimer, int seconds){
     if (isFirstTimer){
         countingTimer = new QTimer(this);
         clearTimerCounting(seconds);
-        connect(countingTimer, &QTimer::timeout, this, &MyWidget::startTimerCounting);
-        countingTimer->start(1000);
     }
     // 10-sec timer
     else{
         clearTimerCounting(seconds);
         countingTimer = new QTimer(this);
-        connect(countingTimer, &QTimer::timeout, this, &MyWidget::startTimerCounting);
-        countingTimer->start(1000);
     }
+
+    connect(countingTimer, &QTimer::timeout, this, &MyWidget::startTimerCounting);
+    countingTimer->start(1000);
 }
 
 
@@ -142,17 +157,8 @@ void MyWidget::startTimerCounting(){
     if (count>=0) ui->timerNumber->display(count);
 
     if (count==0){
-
-
         ui->talkGroup->setEnabled(false);
-
-        if(speedState == "S") sendBtnHit();
-
-//        if(isMaster){
-//            usleep(300000); // sleep for 0.3 sec
-//            QString str2 = "P";
-//            socket->write(str2.toUtf8());
-//        }
+        if(speedState == "S") sendBtnHit(); // auto send unfinished answers
     }
     else if (count==-1){
         countingTimer->stop();
@@ -243,7 +249,7 @@ void MyWidget::handleShowMyScore(QString str){
     QChar n2 = str.at(3);
     QChar n3 = str.at(4);
 
-    // converstion points=points-100 [0:299] to maintain constant length of msg from server
+    // conversion points=points-100 [0:299] to maintain constant length of msg from server
     if  (n1 == '1') n1 = '0';
 
     QString points = QString(n1)+QString(n2)+QString(n3);
