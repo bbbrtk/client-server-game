@@ -4,6 +4,10 @@
 #include <QLabel>
 #include <QMessageBox>
 
+#define CONNECTION_TIMEOUT 3000 // 3 sec (timer)
+#define TIMER_WAIT_B4_SEND 300000 // 0,3 sec (usleep)
+#define NEXT_ROUND_AFTER 5000000 // 5 sec (usleep)
+
 /*
     TODO
  *
@@ -83,7 +87,7 @@ void MyWidget::tryToConnect(){
             QMessageBox::critical(this, "Error", "Connect timed out");
         }
     );
-    connTimeoutTimer->start(3000); // try to connect to server for 3 sec
+    connTimeoutTimer->start(CONNECTION_TIMEOUT); // try to connect to server for 3 sec
 }
 
 
@@ -165,7 +169,7 @@ void MyWidget::startTimerCounting(){
         countingTimer->deleteLater();
 
         if(isMaster){
-            usleep(300000); // sleep for 0.3 sec
+            usleep(TIMER_WAIT_B4_SEND); // sleep for 0.3 sec
             QString str2 = "P";
             socket->write(str2.toUtf8());
         }
@@ -253,14 +257,52 @@ void MyWidget::handleShowMyScore(QString str){
     if  (n1 == '1') n1 = '0';
 
     QString points = QString(n1)+QString(n2)+QString(n3);
-    QString infoBox = "Correct: " + QString(correct) + "/4, points: " + points + ".";
+    QString infoBox = "<b> Correct: " + QString(correct) + "/4, points: " + points + ".</b>";
+    ui->msgsTextEdit->clear();
+    ui->msgsTextEdit->append(infoBox);
+
+    // TODO
+    if (isMaster){
+        if (ui->msgsTextEdit->toPlainText().at(0) == 'C'){
+            usleep(NEXT_ROUND_AFTER); // sleep for 5 sec
+            QString str = "B"; // start next round
+            socket->write(str.toUtf8());
+        }
+    }
+}
+
+
+void MyWidget::handleShowMyRank(QString str){
+    QString rank = QString(str.at(1));
+    QChar n1 = str.at(3);
+    QChar n2 = str.at(4);
+    QChar n3 = str.at(5);
+
+    if (str.indexOf('R')!=2){
+        QChar r1 = str.at(1);
+        QChar r2 = str.at(2);
+        QString rank = QString(r1)+QString(r2);
+        QChar n1 = str.at(4);
+        QChar n2 = str.at(5);
+        QChar n3 = str.at(6);
+    }
+
+    if  (n1 == '1') n1 = '0';
+    QString points = QString(n1)+QString(n2)+QString(n3);
+
+    QString infoBox = "Your rank:  " + QString(rank) + " Total points: " + points;
     QMessageBox::information(this, "Score", infoBox); // popup
 
-    if (isMaster){
-        usleep(5000000); // sleep for 5 sec
-        QString str = "B"; // start next round
-        socket->write(str.toUtf8());
-    }
+    if (isMaster) isMaster = false;
+
+    ui->connectGroup->setEnabled(false);
+    ui->startGameBox->setEnabled(true);
+    ui->startGameBtn->setEnabled(false);
+    ui->talkGroup->setEnabled(false);
+
+    // reload game list
+    QString reload = "L";
+    socket->write(reload.toUtf8());
 }
 
 
@@ -296,6 +338,9 @@ void MyWidget::analyzeRead(QByteArray ba) {
 
     // get score -> show points, wait 5 sec, start new round
     else if (signalStr == 'P') handleShowMyScore(str);
+
+    // get rank -> show rank and points, popup, exit game, reload
+    else if (signalStr == 'K') handleShowMyRank(str);
 
     // azerstaf
     else if (signalStr == 'X') handleOtherStuff();

@@ -12,7 +12,9 @@
 #include <sys/epoll.h>
 #include <unordered_set>
 #include <signal.h>
+#include <map>
 
+#define NUMBER_OF_ROUNDS 2
 
 class Client;
 class Game;
@@ -47,6 +49,8 @@ int wordCorrect(char * data, char letter);
 
 int calculatePoints(int correct, char letter);
 
+void setAndSendRank(int _game);
+
 
 // *************** CLASSES ******************
 
@@ -73,6 +77,12 @@ class Game {
             _roundNumber++;
             _letter = char ( rand()%(90-65+1)+65 ); // leter from ascii A to Z
         }
+
+        void remove() {
+        printf("removing game %d\n", _gameNumber);
+        games.erase(this);
+        delete this;
+    }
 };
 
 
@@ -108,6 +118,7 @@ public:
 
     int fd() const {return _fd;}
     int game() const {return _game;}
+    int points() const {return _points;}
 
     virtual void handleEvent(uint32_t events) override {
         if(events & EPOLLIN) {
@@ -126,7 +137,7 @@ public:
         if(count <= 0) events |= EPOLLERR;
 
         // get only first 6 most important chars
-        for (int i=0; i<6; i++) data[i] = dataFromRead[i];
+        for (int i=0; i<5; i++) data[i] = dataFromRead[i];
         printf("client: %d \t READ: %s \n", _fd, data);
 
         // handle ReloadGameBtn
@@ -164,13 +175,13 @@ public:
         }
 
         // send allowance to request score 
-        else if (data[0] == 'P'){           
-            char * buffer;
-            buffer[0] = 'W';
+        else if (data[0] == 'P'){       
+            char buffer[2];
+            sprintf(buffer, "W");    
             sendToAllInGame(_game, buffer);
         }
 
-        // send score
+        // send points
         else if (data[0] == 'W'){
             char buffer[6];
             int points = _points + 100;
@@ -180,10 +191,18 @@ public:
 
         // start new round
         else if (data[0] == 'B'){
-            char buffer[2];           
-            startGameAndGetLetter(_game, buffer);
-            setClientsLetter(_game, buffer[1]);
-            sendToAllInGame(_game, buffer); 
+            for(Game * game : games){
+                if(_game == game->gameNumber()){
+                    if (game->roundNumber() == NUMBER_OF_ROUNDS) setAndSendRank(_game);
+                    else{
+                        char buffer[2];           
+                        startGameAndGetLetter(_game, buffer);
+                        setClientsLetter(_game, buffer[1]);
+                        sendToAllInGame(_game, buffer); 
+                    }
+                    break;
+                }
+            }
         }
     }
 
@@ -413,6 +432,39 @@ int calculatePoints(int correct, char letter){
     else if (letter=='T')points=correct;
 
     return points;
+}
+
+
+void setAndSendRank(int _game){
+    std::map <int, int> rankMap;
+    int rank = 0;
+
+    for(Client * client : clients){
+        if ( _game == client->game() ){
+            rankMap[client->points()] = client->fd();
+            rank++;
+            client->_game = 0;
+            client->_points = 0;
+            client->_rank = 0;
+            client->_correct = 0;
+        }
+    }
+
+    // iterate through map and send score
+    for (std::map<int, int>::iterator i = rankMap.begin(); i != rankMap.end(); i++){
+        printf("key: %d, value %d \n", i->first, i->second);
+        char str[8];
+        int points = i->first+100;
+        sprintf(str, "K%dR%dX", rank, points);
+        rank--;
+
+        if (write(i->second, str, strlen(str)) != (int) strlen(str)) perror("write failed");
+    }
+
+    for(Game * game : games){
+        if (_game == game->gameNumber() ) game->remove();
+    }
+
 }
 
 

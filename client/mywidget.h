@@ -48,6 +48,7 @@ protected:
     void handle10secTimer();
     void handleWantMyScore();
     void handleShowMyScore(QString);
+    void handleShowMyRank(QString);
     void handleOtherStuff(); // unused
 
     QString showAndJoinInput(QList<QLineEdit*>);
