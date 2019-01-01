@@ -11,10 +11,6 @@
 /*
     TODO
  *
- *  auto-close points popup / show points in INFO PANEL
- *  sum up points and present rank
- *
- *  delete master with deleting game (reset _game in Clinet class, refresh client GUI, delete Game instance, delete master)
  *  add client during game (chooseGame, send timer.time request to master, receive timer.time, set new timer, play)
  *
  *  handleDisconnectedFromServer (show popup msg, reset timer, reset text field, refresh GUI )
@@ -60,6 +56,10 @@ MyWidget::~MyWidget() {
 void MyWidget::socketDisconnected() {
     socket->disconnectFromHost();
     ui->msgsTextEdit->append("<span style=\"color: red\">Disconnected from server</span>");
+    ui->connectGroup->setEnabled(true);
+    ui->gameNumberLabel->setText("-");
+    ui->startGameBox->setEnabled(false);
+    ui->talkGroup->setEnabled(false);
 }
 
 
@@ -93,9 +93,9 @@ void MyWidget::tryToConnect(){
 
 /* read from server */
 void MyWidget::socketReadyRead() {
-    QByteArray ba;
-    ba = socket->readAll();
-    analyzeRead(ba);
+    QByteArray msg;
+    msg = socket->readAll();
+    analyzeRead(msg);
 }
 
 
@@ -162,14 +162,14 @@ void MyWidget::startTimerCounting(){
 
     if (count==0){
         ui->talkGroup->setEnabled(false);
-        if(speedState == "S") sendBtnHit(); // auto send unfinished answers
+        if(speedState == "S" || speedState == "F") sendBtnHit(); // auto send unfinished answers
     }
     else if (count==-1){
         countingTimer->stop();
         countingTimer->deleteLater();
 
         if(isMaster){
-            usleep(TIMER_WAIT_B4_SEND); // sleep for 0.3 sec
+            usleep(TIMER_WAIT_B4_SEND);
             QString str2 = "P";
             socket->write(str2.toUtf8());
         }
@@ -220,12 +220,11 @@ void MyWidget::handleGameNumber(QString str){
 
 void MyWidget::handleNewRound(QString str){
     speedState = "F";
-
     QChar letter = str.at(1);
 
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(true);
-    ui->msgsTextEdit->clear();
+    //ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("Round started! Your letter is " + QString(letter) + ".");
     ui->letterLabel->setText(letter);
 
@@ -235,6 +234,7 @@ void MyWidget::handleNewRound(QString str){
 
 void MyWidget::handle10secTimer(){
     if (speedState != "X") speedState = "S";
+    ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("10 sec left...");
 
     createTimer(false, 10);
@@ -253,21 +253,18 @@ void MyWidget::handleShowMyScore(QString str){
     QChar n2 = str.at(3);
     QChar n3 = str.at(4);
 
-    // conversion points=points-100 [0:299] to maintain constant length of msg from server
+    // conversion points=points-100 to maintain constant length of msg from server
     if  (n1 == '1') n1 = '0';
 
     QString points = QString(n1)+QString(n2)+QString(n3);
-    QString infoBox = "<b> Correct: " + QString(correct) + "/4, points: " + points + ".</b>";
+    QString infoBox = "<b>Last round - correct: " + QString(correct) + "/4, points: " + points + ".</b>";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append(infoBox);
 
-    // TODO
     if (isMaster){
-        if (ui->msgsTextEdit->toPlainText().at(0) == 'C'){
-            usleep(NEXT_ROUND_AFTER); // sleep for 5 sec
-            QString str = "B"; // start next round
-            socket->write(str.toUtf8());
-        }
+        usleep(NEXT_ROUND_AFTER); // sleep for 5 sec
+        QString str = "B"; // start next round
+        socket->write(str.toUtf8());
     }
 }
 
@@ -291,24 +288,34 @@ void MyWidget::handleShowMyRank(QString str){
     QString points = QString(n1)+QString(n2)+QString(n3);
 
     QString infoBox = "Your rank:  " + QString(rank) + " Total points: " + points;
-    QMessageBox::information(this, "Score", infoBox); // popup
+    QMessageBox::information(this, "Rank", infoBox); // popup
 
     if (isMaster) isMaster = false;
 
     ui->connectGroup->setEnabled(false);
-    ui->startGameBox->setEnabled(true);
+    ui->startGameBox->setEnabled(false);
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(false);
 
     // reload game list
     QString reload = "L";
     socket->write(reload.toUtf8());
+    ui->gameNumberLabel->setText("-");
 }
 
 
-void MyWidget::handleOtherStuff(){
+void MyWidget::handleRemovingMaster(){
+    if (!isMaster){
+        ui->msgsTextEdit->clear();
+        ui->msgsTextEdit->append("<span style=\"color: red\">Your Game Master quit game. Game is finished.</span>");
+        clearTimerCounting(0);
 
+        // quit game and get my rank
+        QString str = "Y";
+        socket->write(str.toUtf8());
+    }
 }
+
 
 //*******************************************
 //               ANALYZE READ
@@ -342,8 +349,8 @@ void MyWidget::analyzeRead(QByteArray ba) {
     // get rank -> show rank and points, popup, exit game, reload
     else if (signalStr == 'K') handleShowMyRank(str);
 
-    // azerstaf
-    else if (signalStr == 'X') handleOtherStuff();
+    // show info about removing, show rank, reset GUI
+    else if (signalStr == 'X') handleRemovingMaster();
 }
 
 
@@ -403,7 +410,7 @@ void MyWidget::sendBtnHit(){
     clearInputFields(lineEditList);
 }
 
-/* TODO */
+
 void MyWidget::quitBtnHit(){
     MyWidget::close();
 }

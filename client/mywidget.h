@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QLineEdit>
 #include <unistd.h>
+#include <time.h>
 
 namespace Ui {
 class MyWidget;
@@ -49,7 +50,7 @@ protected:
     void handleWantMyScore();
     void handleShowMyScore(QString);
     void handleShowMyRank(QString);
-    void handleOtherStuff(); // unused
+    void handleRemovingMaster();
 
     QString showAndJoinInput(QList<QLineEdit*>);
     void clearInputFields(QList<QLineEdit*>);

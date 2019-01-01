@@ -13,8 +13,11 @@
 #include <unordered_set>
 #include <signal.h>
 #include <map>
+#include <vector>
+#include <algorithm>
 
 #define NUMBER_OF_ROUNDS 2
+#define GAME_REMOVING_DELAY 3000000 // 3 sec
 
 class Client;
 class Game;
@@ -24,6 +27,8 @@ int epollFd;
 
 std::unordered_set<Client*> clients;
 std::unordered_set<Game*> games;
+
+typedef std::pair<int,int> intPair;
 
 void ctrl_c(int);
 
@@ -80,8 +85,10 @@ class Game {
 
         void remove() {
         printf("removing game %d\n", _gameNumber);
+        usleep(GAME_REMOVING_DELAY);
         games.erase(this);
         delete this;
+        printf("game REMOVED \n");
     }
 };
 
@@ -136,17 +143,17 @@ public:
         ssize_t count  = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
         if(count <= 0) events |= EPOLLERR;
 
-        // get only first 6 most important chars
-        for (int i=0; i<5; i++) data[i] = dataFromRead[i];
+        // get only first 7 most important chars
+        for (int i=0; i<6; i++) data[i] = dataFromRead[i];
         printf("client: %d \t READ: %s \n", _fd, data);
 
         // handle ReloadGameBtn
         if (data[0] == 'L'){
+            usleep(GAME_REMOVING_DELAY);
             sendListOfGames(_fd);
         }
 
         // set game number
-        // TODO: check if data[1] data[2] are numbers
         else if (data[0] == 'G'){
             int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
             char str[4];
@@ -189,11 +196,14 @@ public:
             write(buffer);
         }
 
-        // start new round
+        // start new round or finish game
         else if (data[0] == 'B'){
             for(Game * game : games){
                 if(_game == game->gameNumber()){
-                    if (game->roundNumber() == NUMBER_OF_ROUNDS) setAndSendRank(_game);
+                    if (game->roundNumber() == NUMBER_OF_ROUNDS){
+                        setAndSendRank(_game);
+                        game->remove();
+                    } 
                     else{
                         char buffer[2];           
                         startGameAndGetLetter(_game, buffer);
@@ -204,6 +214,11 @@ public:
                 }
             }
         }
+
+        // reset game after removing master
+        else if (data[0] == 'Y'){
+            setAndSendRank(_game);
+        }
     }
 
     // fix to default option
@@ -213,11 +228,23 @@ public:
         printf("client: %d \t WRITE: %s \n", _fd, buffer);
     }
 
-    // TODO
     void remove() {
-        printf("removing %d\n", _fd);
+        printf("removing client %d\n", _fd);
+
+        for(Game * game : games){
+            if(game->masterFd() == _fd){
+                char buffer[2];
+                sprintf(buffer, "X");    
+                sendToAllInGame(_game, buffer);
+                game->remove();
+                break;
+            }
+        }
         clients.erase(this);
         delete this;
+
+        printf("client REMOVED \n");
+        
     }
 };
 
@@ -437,12 +464,13 @@ int calculatePoints(int correct, char letter){
 
 void setAndSendRank(int _game){
     std::map <int, int> rankMap;
+    std::vector<intPair> rankVector;
     int rank = 0;
 
     for(Client * client : clients){
         if ( _game == client->game() ){
-            rankMap[client->points()] = client->fd();
             rank++;
+            rankMap[client->fd()] = client->points();           
             client->_game = 0;
             client->_points = 0;
             client->_rank = 0;
@@ -450,22 +478,39 @@ void setAndSendRank(int _game){
         }
     }
 
-    // iterate through map and send score
-    for (std::map<int, int>::iterator i = rankMap.begin(); i != rankMap.end(); i++){
-        printf("key: %d, value %d \n", i->first, i->second);
+    // copy from map
+    std::copy(rankMap.begin(), rankMap.end(),
+        std::back_inserter<std::vector<intPair>>(rankVector));
+
+    // sort vector
+    std::sort(rankVector.begin(), rankVector.end(),
+        [](const intPair& l, const intPair& r) {
+            if (l.second != r.second) return l.second < r.second;
+            return l.first < r.first;
+        }
+    );
+
+    for (auto const &intPair: rankVector) {
+        //printf("points: %d, client %d \n", intPair.second, intPair.first);
         char str[8];
-        int points = i->first+100;
+        int points = intPair.second+100;
         sprintf(str, "K%dR%dX", rank, points);
         rank--;
-
-        if (write(i->second, str, strlen(str)) != (int) strlen(str)) perror("write failed");
+        if (write(intPair.first, str, strlen(str)) != (int) strlen(str)) perror("write failed");
     }
 
-    for(Game * game : games){
-        if (_game == game->gameNumber() ) game->remove();
-    }
-
+    rankVector.clear();
+    rankMap.clear();
 }
 
 
 
+    // iterate through map and send score
+    // for (std::map<int, int>::iterator i = rankMap.begin(); i != rankMap.end(); i++){
+    //     printf("key: %d, value %d \n", i->first, i->second);
+    //     char str[8];
+    //     int points = i->first+100;
+    //     sprintf(str, "K%dR%dX", rank, points);
+    //     rank--;
+    //     if (write(i->second, str, strlen(str)) != (int) strlen(str)) perror("write failed");
+    // }
