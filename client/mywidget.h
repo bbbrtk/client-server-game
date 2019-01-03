@@ -62,6 +62,7 @@ private:
     int count;
     QString speedState; // F - first, S - second, T - third, X - answers sent
     bool isMaster;
+    bool firstAnswerSent;
 
 
 };

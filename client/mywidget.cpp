@@ -230,6 +230,7 @@ void MyWidget::handleLateClient(QString str){
 
 void MyWidget::handleNewRound(QString str){
     speedState = "F";
+    firstAnswerSent = false;
     QChar letter = str.at(1);
 
     ui->startGameBtn->setEnabled(false);
@@ -243,7 +244,9 @@ void MyWidget::handleNewRound(QString str){
 
 
 void MyWidget::handleLateClientNewRound(QString str){
-    speedState = "F";
+    if (firstAnswerSent) speedState = "S";
+    else speedState = "F";
+
     QChar letter = str.at(1);
 
     ui->startGameBtn->setEnabled(false);
@@ -263,6 +266,7 @@ void MyWidget::handle10secTimer(){
     if (speedState != "X") speedState = "S";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("10 sec left...");
+    firstAnswerSent = true;
 
     createTimer(false, 10);
 }
@@ -428,7 +432,7 @@ void MyWidget::sendBtnHit(){
     lineEditList.append(ui->msgLineEdit); lineEditList.append(ui->msgLineEdit2);
     lineEditList.append(ui->msgLineEdit3); lineEditList.append(ui->msgLineEdit4);
 
-    if (speedState == "S" && count == 0) speedState = "T"; // time passed and answers still not sent
+    if ( (speedState == "S" || speedState == "F" ) && count == 0) speedState = "T"; // time passed and answers still not sent
     QString str = "A" + speedState + showAndJoinInput(lineEditList);
     str = str.toUpper();
     socket->write(str.toUtf8());

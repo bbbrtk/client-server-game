@@ -106,11 +106,13 @@ class Client : public Handler{
     int _fd;
     
 public:
+    // TODO: set setters
     int _game;
     int _points;
     int _rank;
     int _correct;
     char _currentLetter;
+    bool _firstAnswerSent;
 
     Client(int fd) : _fd(fd) {
         epoll_event ee {EPOLLIN|EPOLLRDHUP, {.ptr=this}};
@@ -120,6 +122,7 @@ public:
         _rank = 0;
         _correct = 0;
     }
+
     virtual ~Client(){
         epoll_ctl(epollFd, EPOLL_CTL_DEL, _fd, nullptr);
         shutdown(_fd, SHUT_RDWR);
@@ -232,6 +235,7 @@ public:
                         setClientsLetter(_game, buffer[1]);
                         sendToAllInGame(_game, buffer); 
                     }
+                    _firstAnswerSent = false;
                     break;
                 }
             }
@@ -414,6 +418,7 @@ void sendListOfGames(int clientFd){
 
 
 // *************** GAME ******************
+
 void wantMasterTimer(Game game, Client& client){
     char buffer[6];
     sprintf(buffer, "H%c%d", game.letter(), client.fd()+10); 
@@ -543,3 +548,5 @@ void setAndSendRank(int _game){
     //     rank--;
     //     if (write(i->second, str, strlen(str)) != (int) strlen(str)) perror("write failed");
     // }
+
+    // *************** HANDLERS ******************
