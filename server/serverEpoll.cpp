@@ -281,7 +281,6 @@ int main(int argc, char ** argv){
             ctrl_c(SIGINT);
         }
 
-        // LOL
         ((Handler*)ee.data.ptr)->handleEvent(ee.events);
 
         printf("\t ----------------- \n");
@@ -379,6 +378,7 @@ int chooseGameNumber(Client& client, int _game, int chosenGame, char * str){
     for(Game * game : games){
         // game exist
         if(chosenGame == game->gameNumber()){
+            //client._game = chosenGame;
             _game = chosenGame;
             sprintf(str, "G%dU", _game );
             if (game->letter() != '0') wantMasterTimer(*game, client); // if game is pending
@@ -581,6 +581,7 @@ void handleStartNewRoundOrFinishGame(int _game){
                 startGameAndGetLetter(_game, buffer);
                 setClientsLetter(_game, buffer[1]);
                 sendToAllInGame(_game, buffer); 
+                game->_firstAnswerSent = false; 
             }
             break;
         }

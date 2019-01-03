@@ -224,6 +224,7 @@ void MyWidget::handleGameNumber(QString str){
     if(str.at(3)=='M') ui->startGameBtn->setEnabled(true);
 }
 
+
 void MyWidget::handleLateClient(QString str){
     QString letter = QString(str.at(1));
     QString clientFd = QString(str.at(2))+QString(str.at(3));
