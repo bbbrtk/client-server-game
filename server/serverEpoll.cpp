@@ -19,6 +19,8 @@
 #define NUMBER_OF_ROUNDS 2
 #define GAME_REMOVING_DELAY 3000000 // 3 sec
 
+typedef std::pair<int,int> intPair;
+
 class Client;
 class Game;
 
@@ -28,9 +30,13 @@ int epollFd;
 std::unordered_set<Client*> clients;
 std::unordered_set<Game*> games;
 
-typedef std::pair<int,int> intPair;
 
 void ctrl_c(int);
+
+uint16_t readPort(char * txt);
+
+void setReuseAddr(int sock);
+
 
 void sendToAll(char * buffer);
 
@@ -40,6 +46,7 @@ void sendToAllInGame(int game, char * buffer);
 
 void sendListOfGames(int clientFd);
 
+
 void wantMasterTimer(Game game, Client& client);
 
 int chooseGameNumber(Client& client, int _game, int chosenGame, char * str);
@@ -48,15 +55,28 @@ void startGameAndGetLetter(int _game, char * buffer);
 
 void setClientsLetter(int _game, char letter);
 
-uint16_t readPort(char * txt);
-
-void setReuseAddr(int sock);
-
 int wordCorrect(char * data, char letter);
 
 int calculatePoints(int correct, char letter);
 
 void setAndSendRank(int _game);
+
+
+void handleReloadGame(int fd);
+
+void handleSetGameNumber(char * data, Client& client);
+
+void handleLateClient(char * data);
+
+void handleStartGame(int game);
+
+void handleGetAnswersSendTimer(char * data, Client& client);
+
+void handleAllowScoreRequest(int game);
+
+void handleSendPoints(Client& client);
+
+void handleStartNewRoundOrFinishGame(int game);
 
 
 // *************** CLASSES ******************
@@ -68,10 +88,13 @@ class Game {
     int _masterFd;
 
     public:
+        bool _firstAnswerSent;
+
         Game(int number, int master) : _gameNumber(number) {
             _roundNumber = 0;
             _masterFd = master;
             _letter = '0';
+            _firstAnswerSent = false;
         }
 
         virtual ~Game(){}
@@ -80,6 +103,7 @@ class Game {
         char letter() const {return _letter;}
         int roundNumber() const {return _roundNumber;}
         int masterFd() const {return _masterFd;}
+        bool firstAnswerSent() const {return _firstAnswerSent;}
 
         void getNewLetter(){
             _roundNumber++;
@@ -87,11 +111,13 @@ class Game {
         }
 
         void remove() {
-        printf("removing game %d\n", _gameNumber);
-        usleep(GAME_REMOVING_DELAY);
-        games.erase(this);
-        delete this;
-        printf("game REMOVED \n");
+            printf("removing game %d\n", _gameNumber);
+
+            usleep(GAME_REMOVING_DELAY);
+            games.erase(this);
+            delete this;
+
+            printf("game REMOVED \n");
     }
 };
 
@@ -106,13 +132,11 @@ class Client : public Handler{
     int _fd;
     
 public:
-    // TODO: set setters
     int _game;
     int _points;
     int _rank;
     int _correct;
     char _currentLetter;
-    bool _firstAnswerSent;
 
     Client(int fd) : _fd(fd) {
         epoll_event ee {EPOLLIN|EPOLLRDHUP, {.ptr=this}};
@@ -132,6 +156,9 @@ public:
     int fd() const {return _fd;}
     int game() const {return _game;}
     int points() const {return _points;}
+    int rank() const {return _rank;}
+    int correct() const {return _correct;}
+    char currentLetter() const {return _currentLetter;}
 
     virtual void handleEvent(uint32_t events) override {
         if(events & EPOLLIN) {
@@ -143,114 +170,36 @@ public:
     }
 
     void read(uint32_t events){
-        char dataFromRead[60];
-        char data[9];
+        char dataFromRead[60], data[9];
 
         ssize_t count  = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
         if(count <= 0) events |= EPOLLERR;
 
-        // get only first 7 most important chars
         for (int i=0; i<8; i++) data[i] = dataFromRead[i];
         printf("client: %d \t READ: %s \n", _fd, data);
 
-        // handle ReloadGameBtn
-        if (data[0] == 'L'){
-            usleep(GAME_REMOVING_DELAY);
-            sendListOfGames(_fd);
-        }
+        if (data[0] == 'L') handleReloadGame(_fd);
 
-        // set game number
-        else if (data[0] == 'G'){
-            int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
-            char str[4];
-            _game = chooseGameNumber(*this, _game, chosenGame, str);
-            write(str);            
-        }
+        else if (data[0] == 'G') handleSetGameNumber(data, *this);
 
-        // late client
-        else if (data[0] == 'H'){
-            int receivedFd = (data[2] - '0')*10 + (data[3] - '0') - 10;
-            printf("late client id: %d \n", receivedFd);
+        else if (data[0] == 'H') handleLateClient(data);
 
-            for(Client * client : clients){
-                if (receivedFd == client->fd() ){
-                    client->_currentLetter = data[1];
-                    int timerValue = (data[4] - '0')*10 + (data[5] - '0');
+        else if (data[0] == 'S') handleStartGame(_game);
 
-                    printf("TIMER VALUE : %d LETTER %c \n", timerValue, data[1]);
-                    char buffer[6];
-                    sprintf(buffer, "V%c%d", data[1], timerValue);
-                    client->write(buffer);
-                    break;
-                }
-            }
-        }
+        else if (data[0] == 'A') handleGetAnswersSendTimer(data, *this);
 
-        // start game
-        else if (data[0] == 'S'){
-            char buffer[2];           
-            startGameAndGetLetter(_game, buffer);
-            setClientsLetter(_game, buffer[1]);
-            sendToAllInGame(_game, buffer); 
-        }
+        else if (data[0] == 'P') handleAllowScoreRequest(_game);
 
-        // get answers, send 10-sec-timer msg
-        else if (data[0] == 'A'){
-            _correct = wordCorrect(data, _currentLetter);
-            _points += calculatePoints(_correct, data[1]);
+        else if (data[0] == 'W') handleSendPoints(*this);
 
-            if (data[1] == 'F'){
-                char buffer[2];
-                sprintf(buffer, "T");
-                sendToAllInGame(_game, buffer);
-            }
-        }
+        else if (data[0] == 'B') handleStartNewRoundOrFinishGame(_game);
 
-        // send allowance to request score 
-        else if (data[0] == 'P'){       
-            char buffer[2];
-            sprintf(buffer, "W");    
-            sendToAllInGame(_game, buffer);
-        }
+        else if (data[0] == 'Y') setAndSendRank(_game); // reset game after removing master
 
-        // send points
-        else if (data[0] == 'W'){
-            char buffer[6];
-            int points = _points + 100;
-            sprintf(buffer, "P%d%d", _correct, points);
-            write(buffer);
-        }
-
-        // start new round or finish game
-        else if (data[0] == 'B'){
-            for(Game * game : games){
-                if(_game == game->gameNumber()){
-                    if (game->roundNumber() == NUMBER_OF_ROUNDS){
-                        setAndSendRank(_game);
-                        game->remove();
-                    } 
-                    else{
-                        char buffer[2];           
-                        startGameAndGetLetter(_game, buffer);
-                        setClientsLetter(_game, buffer[1]);
-                        sendToAllInGame(_game, buffer); 
-                    }
-                    _firstAnswerSent = false;
-                    break;
-                }
-            }
-        }
-
-        // reset game after removing master
-        else if (data[0] == 'Y'){
-            setAndSendRank(_game);
-        }
     }
 
-    // fix to default option
     void write(char * buffer){
-        int check = ::write(_fd, buffer, strlen(buffer));
-        if(check != (int) strlen(buffer)) perror("write failed");
+        if ( ::write(_fd, buffer, strlen(buffer)) != (int) strlen(buffer) ) perror("write failed");
         printf("client: %d \t WRITE: %s \n", _fd, buffer);
     }
 
@@ -270,7 +219,6 @@ public:
         delete this;
 
         printf("client REMOVED \n");
-        
     }
 };
 
@@ -336,7 +284,7 @@ int main(int argc, char ** argv){
         // LOL
         ((Handler*)ee.data.ptr)->handleEvent(ee.events);
 
-        printf("_____next_while_iteration_____: \n");
+        printf("\t ----------------- \n");
     }
 }
 
@@ -411,9 +359,7 @@ void sendListOfGames(int clientFd){
     }
     char tab[100];
     strcpy(tab, buffer.c_str());
-
-    int check = write(clientFd, tab, strlen(tab));
-    if(check != (int) strlen(tab)) perror("write failed");
+    if ( ::write(clientFd, tab, strlen(tab)) != (int) strlen(tab) ) perror("write failed");
 }
 
 
@@ -448,7 +394,7 @@ int chooseGameNumber(Client& client, int _game, int chosenGame, char * str){
         sprintf(str, "G%dM", _game );
     }
 
-    // if number game is incorrect
+    // if game number is incorrect
     else if (chosenGame!=0 && _game==0) sendListOfGames(client.fd()); 
 
     printf("client: %d \t myGame: %d \n", client.fd(), _game);
@@ -537,8 +483,6 @@ void setAndSendRank(int _game){
     rankMap.clear();
 }
 
-
-
     // iterate through map and send score
     // for (std::map<int, int>::iterator i = rankMap.begin(); i != rankMap.end(); i++){
     //     printf("key: %d, value %d \n", i->first, i->second);
@@ -549,4 +493,96 @@ void setAndSendRank(int _game){
     //     if (write(i->second, str, strlen(str)) != (int) strlen(str)) perror("write failed");
     // }
 
-    // *************** HANDLERS ******************
+
+// *************** HANDLERS ******************
+
+void handleReloadGame(int fd){
+    usleep(GAME_REMOVING_DELAY);
+    sendListOfGames(fd);
+}
+
+
+void handleSetGameNumber(char * data, Client& client){
+    int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
+    char str[4];
+    client._game = chooseGameNumber(client, client._game, chosenGame, str);
+    client.write(str);   
+}
+
+
+void handleLateClient(char * data){
+    int receivedFd = (data[2] - '0')*10 + (data[3] - '0') - 10;
+
+    for(Client * client : clients){
+        if (receivedFd == client->fd() ){
+            client->_currentLetter = data[1];
+            int timerValue = (data[4] - '0')*10 + (data[5] - '0');
+            
+            char buffer[6];
+            sprintf(buffer, "V%c%d", data[1], timerValue);
+            client->write(buffer);
+
+            break;
+        }
+    }
+}
+
+
+void handleStartGame(int game){
+    char buffer[2];           
+    startGameAndGetLetter(game, buffer);
+    setClientsLetter(game, buffer[1]);
+    sendToAllInGame(game, buffer); 
+}
+
+
+void handleGetAnswersSendTimer(char * data, Client& client){
+    client._correct = wordCorrect(data, client.currentLetter());
+    client._points += calculatePoints(client.correct(), data[1]);
+
+    for (Game * game : games){
+        if (game->gameNumber() == client.game()){
+            if (data[1] == 'F' && !game->firstAnswerSent()){
+                char buffer[2];
+                sprintf(buffer, "T");
+                sendToAllInGame(client.game(), buffer);
+                game->_firstAnswerSent = true; 
+            }
+            break;
+        }
+    }
+}
+
+
+void handleAllowScoreRequest(int game){
+    char buffer[2];
+    sprintf(buffer, "W");    
+    sendToAllInGame(game, buffer);
+}
+
+
+void handleSendPoints(Client& client){
+    char buffer[6];
+    int points = client.points() + 100;
+    sprintf(buffer, "P%d%d", client.correct(), points);
+    client.write(buffer);
+}
+
+
+void handleStartNewRoundOrFinishGame(int _game){
+    for(Game * game : games){
+        if(_game == game->gameNumber()){
+            if (game->roundNumber() == NUMBER_OF_ROUNDS){
+                setAndSendRank(_game);
+                game->remove();
+            } 
+            else{
+                char buffer[2];           
+                startGameAndGetLetter(_game, buffer);
+                setClientsLetter(_game, buffer[1]);
+                sendToAllInGame(_game, buffer); 
+            }
+            break;
+        }
+    }
+}

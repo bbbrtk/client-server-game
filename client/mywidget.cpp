@@ -11,7 +11,7 @@
 /*
     TODO
  *
- *  add client during game (chooseGame, send timer.time request to master, receive timer.time, set new timer, play)
+ *  fix answerFirstSent - Game class param
  *
  *  handleDisconnectedFromServer (show popup msg, reset timer, reset text field, refresh GUI )
  *  handleDeleteMyGame (show popup msg, reset timer, reset text field, refresh GUI)
@@ -230,7 +230,6 @@ void MyWidget::handleLateClient(QString str){
 
 void MyWidget::handleNewRound(QString str){
     speedState = "F";
-    firstAnswerSent = false;
     QChar letter = str.at(1);
 
     ui->startGameBtn->setEnabled(false);
@@ -244,9 +243,7 @@ void MyWidget::handleNewRound(QString str){
 
 
 void MyWidget::handleLateClientNewRound(QString str){
-    if (firstAnswerSent) speedState = "S";
-    else speedState = "F";
-
+    speedState = "F";
     QChar letter = str.at(1);
 
     ui->startGameBtn->setEnabled(false);
@@ -266,7 +263,6 @@ void MyWidget::handle10secTimer(){
     if (speedState != "X") speedState = "S";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("10 sec left...");
-    firstAnswerSent = true;
 
     createTimer(false, 10);
 }
