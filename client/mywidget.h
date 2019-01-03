@@ -45,7 +45,9 @@ protected:
     void analyzeRead(QByteArray);
     void handleListOfGames(QString);
     void handleGameNumber(QString);
+    void handleLateClient(QString);
     void handleNewRound(QString);
+    void handleLateClientNewRound(QString);
     void handle10secTimer();
     void handleWantMyScore();
     void handleShowMyScore(QString);

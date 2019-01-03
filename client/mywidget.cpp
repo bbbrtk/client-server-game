@@ -133,7 +133,7 @@ void MyWidget::clearTimerCounting(int seconds){
         countingTimer->deleteLater();
     }
     count = seconds;
-    ui->timerNumber->display(count);
+    ui->timerNumber->setText(QString::number(count));
 }
 
 
@@ -158,7 +158,7 @@ void MyWidget::createTimer(bool isFirstTimer, int seconds){
 /* timer counting to 0 */
 void MyWidget::startTimerCounting(){
     count--;
-    if (count>=0) ui->timerNumber->display(count);
+    if (count>=0) ui->timerNumber->setText(QString::number(count));
 
     if (count==0){
         ui->talkGroup->setEnabled(false);
@@ -203,10 +203,7 @@ void MyWidget::handleListOfGames(QString str){
 
 
 void MyWidget::handleGameNumber(QString str){
-    QChar n1 = str.at(1);
-    QChar n2 = str.at(2);
-    QChar n3 = str.at(3);
-    QString number = QString(n1)+QString(n2);
+    QString number = QString(str.at(1))+QString(str.at(1));
 
     ui->gameNumberLabel->setText(number);
     ui->startGameBox->setEnabled(false);
@@ -214,7 +211,20 @@ void MyWidget::handleGameNumber(QString str){
     ui->msgsTextEdit->append("Game n." + number + " is ready to start!");
 
     // if client is Game Master
-    if(n3=='M') ui->startGameBtn->setEnabled(true);
+    if(str.at(3)=='M') ui->startGameBtn->setEnabled(true);
+}
+
+void MyWidget::handleLateClient(QString str){
+    QString letter = QString(str.at(1));
+    QString clientFd = QString(str.at(2))+QString(str.at(3));
+
+    int timerValue = ui->timerNumber->text().toInt() + 10;
+    //QString timer = QStringLiteral("%1").arg(timerValue);
+
+    ui->msgsTextEdit->append("MY TIMER: " + ui->timerNumber->text());
+
+    QString msg = "H" + letter + clientFd + QString::number(timerValue);
+    socket->write(msg.toUtf8());
 }
 
 
@@ -229,6 +239,23 @@ void MyWidget::handleNewRound(QString str){
     ui->letterLabel->setText(letter);
 
     createTimer(true, 30);
+}
+
+
+void MyWidget::handleLateClientNewRound(QString str){
+    speedState = "F";
+    QChar letter = str.at(1);
+
+    ui->startGameBtn->setEnabled(false);
+    ui->talkGroup->setEnabled(true);
+    //ui->msgsTextEdit->clear();
+    ui->msgsTextEdit->append("Round IS PENDING, be quick! Your letter is " + QString(letter) + ".");
+    ui->letterLabel->setText(letter);
+
+    QString timerValue = QString(str.at(2))+QString(str.at(3));
+    int timerIntValue = timerValue.toInt()-10;
+
+    createTimer(true, timerIntValue);
 }
 
 
@@ -248,16 +275,13 @@ void MyWidget::handleWantMyScore(){
 
 
 void MyWidget::handleShowMyScore(QString str){
-    QChar correct = str.at(1);
     QChar n1 = str.at(2);
-    QChar n2 = str.at(3);
-    QChar n3 = str.at(4);
 
     // conversion points=points-100 to maintain constant length of msg from server
     if  (n1 == '1') n1 = '0';
 
-    QString points = QString(n1)+QString(n2)+QString(n3);
-    QString infoBox = "<b>Last round - correct: " + QString(correct) + "/4, points: " + points + ".</b>";
+    QString points = QString(n1)+QString(str.at(3))+QString(str.at(4));
+    QString infoBox = "<b>Last round - correct: " + QString(str.at(1)) + "/4, points: " + points + ".</b>";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append(infoBox);
 
@@ -276,9 +300,7 @@ void MyWidget::handleShowMyRank(QString str){
     QChar n3 = str.at(5);
 
     if (str.indexOf('R')!=2){
-        QChar r1 = str.at(1);
-        QChar r2 = str.at(2);
-        QString rank = QString(r1)+QString(r2);
+        QString rank = QString(str.at(1))+QString(str.at(2));
         QChar n1 = str.at(4);
         QChar n2 = str.at(5);
         QChar n3 = str.at(6);
@@ -334,8 +356,14 @@ void MyWidget::analyzeRead(QByteArray ba) {
     // get game number -> show
     else if (signalStr == 'G') handleGameNumber(str);
 
+    // late client begin -> send master timer value and current letter
+    else if (signalStr == 'H') handleLateClient(str);
+
     // get round letter -> show and start timer
     else if (signalStr == 'R') handleNewRound(str);
+
+    // let client get letter -> show and start timer
+    else if (signalStr == 'V') handleLateClientNewRound(str);
 
     // get 'first successful sent' msg -> set timer to 10 sec left
     else if (signalStr == 'T') handle10secTimer();

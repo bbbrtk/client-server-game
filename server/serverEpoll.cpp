@@ -40,7 +40,9 @@ void sendToAllInGame(int game, char * buffer);
 
 void sendListOfGames(int clientFd);
 
-int chooseGameNumber(int _fd, int _game, int chosenGame, char * str);
+void wantMasterTimer(Game game, Client& client);
+
+int chooseGameNumber(Client& client, int _game, int chosenGame, char * str);
 
 void startGameAndGetLetter(int _game, char * buffer);
 
@@ -69,6 +71,7 @@ class Game {
         Game(int number, int master) : _gameNumber(number) {
             _roundNumber = 0;
             _masterFd = master;
+            _letter = '0';
         }
 
         virtual ~Game(){}
@@ -138,13 +141,13 @@ public:
 
     void read(uint32_t events){
         char dataFromRead[60];
-        char data[5];
+        char data[9];
 
         ssize_t count  = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
         if(count <= 0) events |= EPOLLERR;
 
         // get only first 7 most important chars
-        for (int i=0; i<6; i++) data[i] = dataFromRead[i];
+        for (int i=0; i<8; i++) data[i] = dataFromRead[i];
         printf("client: %d \t READ: %s \n", _fd, data);
 
         // handle ReloadGameBtn
@@ -157,8 +160,27 @@ public:
         else if (data[0] == 'G'){
             int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
             char str[4];
-            _game = chooseGameNumber(_fd, _game, chosenGame, str);
+            _game = chooseGameNumber(*this, _game, chosenGame, str);
             write(str);            
+        }
+
+        // late client
+        else if (data[0] == 'H'){
+            int receivedFd = (data[2] - '0')*10 + (data[3] - '0') - 10;
+            printf("late client id: %d \n", receivedFd);
+
+            for(Client * client : clients){
+                if (receivedFd == client->fd() ){
+                    client->_currentLetter = data[1];
+                    int timerValue = (data[4] - '0')*10 + (data[5] - '0');
+
+                    printf("TIMER VALUE : %d LETTER %c \n", timerValue, data[1]);
+                    char buffer[6];
+                    sprintf(buffer, "V%c%d", data[1], timerValue);
+                    client->write(buffer);
+                    break;
+                }
+            }
         }
 
         // start game
@@ -392,17 +414,23 @@ void sendListOfGames(int clientFd){
 
 
 // *************** GAME ******************
+void wantMasterTimer(Game game, Client& client){
+    char buffer[6];
+    sprintf(buffer, "H%c%d", game.letter(), client.fd()+10); 
+    int check = ::write(game.masterFd(), buffer, sizeof(buffer));
+    //if(check != (int) strlen(buffer)) perror("write failed");
+}
 
-/*  set game number: if new game - become master and add to game, else - add to existing game */
-int chooseGameNumber(int _fd, int _game, int chosenGame, char * str){
+
+int chooseGameNumber(Client& client, int _game, int chosenGame, char * str){
     int maxGameNumber = 10;
-    
     // check if game exist
     for(Game * game : games){
         // game exist
         if(chosenGame == game->gameNumber()){
             _game = chosenGame;
             sprintf(str, "G%dU", _game );
+            if (game->letter() != '0') wantMasterTimer(*game, client); // if game is pending
             break;
         }
         if (maxGameNumber < game->gameNumber()) maxGameNumber = game->gameNumber();
@@ -410,15 +438,15 @@ int chooseGameNumber(int _fd, int _game, int chosenGame, char * str){
 
     // if new game
     if (chosenGame==0 && _game==0){
-        games.insert( new Game(maxGameNumber+1, _fd) );
+        games.insert( new Game(maxGameNumber+1, client.fd()) );
         _game = maxGameNumber+1;
         sprintf(str, "G%dM", _game );
     }
 
     // if number game is incorrect
-    else if (chosenGame!=0 && _game==0) sendListOfGames(_fd); 
+    else if (chosenGame!=0 && _game==0) sendListOfGames(client.fd()); 
 
-    printf("client: %d \t myGame: %d \n", _fd, _game);
+    printf("client: %d \t myGame: %d \n", client.fd(), _game);
     return _game;
 }
 
@@ -429,6 +457,7 @@ void startGameAndGetLetter(int _game, char * buffer){
             game->getNewLetter();
             char letter = game->letter();
             sprintf(buffer, "R%c", letter);
+            break;
         }
     }
 }
