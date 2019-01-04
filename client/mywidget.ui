@@ -259,16 +259,32 @@
        </widget>
       </item>
       <item row="7" column="1">
-       <widget class="QLineEdit" name="msgLineEdit4"/>
+       <widget class="QLineEdit" name="msgLineEdit4">
+        <property name="mouseTracking">
+         <bool>false</bool>
+        </property>
+       </widget>
       </item>
       <item row="3" column="1">
-       <widget class="QLineEdit" name="msgLineEdit"/>
+       <widget class="QLineEdit" name="msgLineEdit">
+        <property name="mouseTracking">
+         <bool>true</bool>
+        </property>
+       </widget>
       </item>
       <item row="6" column="1">
-       <widget class="QLineEdit" name="msgLineEdit3"/>
+       <widget class="QLineEdit" name="msgLineEdit3">
+        <property name="mouseTracking">
+         <bool>false</bool>
+        </property>
+       </widget>
       </item>
       <item row="4" column="1">
-       <widget class="QLineEdit" name="msgLineEdit2"/>
+       <widget class="QLineEdit" name="msgLineEdit2">
+        <property name="mouseTracking">
+         <bool>false</bool>
+        </property>
+       </widget>
       </item>
       <item row="4" column="0">
        <widget class="QLabel" name="label2City">
@@ -353,9 +369,20 @@
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <tabstops>
-  <tabstop>portSpinBox</tabstop>
   <tabstop>hostLineEdit</tabstop>
+  <tabstop>portSpinBox</tabstop>
   <tabstop>conectBtn</tabstop>
+  <tabstop>chooseGameList</tabstop>
+  <tabstop>reloadGameBtn</tabstop>
+  <tabstop>chooseGameBtn</tabstop>
+  <tabstop>startGameBtn</tabstop>
+  <tabstop>msgsTextEdit</tabstop>
+  <tabstop>msgLineEdit</tabstop>
+  <tabstop>msgLineEdit2</tabstop>
+  <tabstop>msgLineEdit3</tabstop>
+  <tabstop>msgLineEdit4</tabstop>
+  <tabstop>sendBtn</tabstop>
+  <tabstop>quitBtn</tabstop>
  </tabstops>
  <resources/>
  <connections/>
