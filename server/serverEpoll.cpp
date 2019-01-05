@@ -49,7 +49,7 @@ void sendListOfGames(int clientFd);
 
 void wantMasterTimer(Client& client);
 
-void chooseGameNumber(Client& client, int chosenGame);
+void chooseGameNumber(Client& client, int chosenGame, char rounds);
 
 void startGameAndGetLetter(Client& client, char * buffer);
 
@@ -87,13 +87,15 @@ class Game {
 
     public:
         int _roundNumber;
+        int _lastRound;
         char _letter;
         bool _firstAnswerSent;
 
         Game(){_gameNumber = 0;}
 
-        Game(int number, int master) : _gameNumber(number) {
+        Game(int number, int master, int rounds) : _gameNumber(number) {
             _roundNumber = 0;
+            _lastRound = rounds;
             _masterFd = master;
             _letter = '0';
             _firstAnswerSent = false;
@@ -103,6 +105,7 @@ class Game {
 
         int gameNumber() const {return _gameNumber;}
         char letter() const {return _letter;}
+        int lastRound() const {return _lastRound;}
         int roundNumber() const {return _roundNumber;}
         int masterFd() const {return _masterFd;}
         bool firstAnswerSent() const {return _firstAnswerSent;}
@@ -133,19 +136,19 @@ class Client : public Handler{
     
 public:
     Game myGame;
+    Game * gamePtr;
     int _points;
     int _rank;
     int _correct;
-    char _order;
 
     Client(int fd) : _fd(fd) {
         epoll_event ee {EPOLLIN|EPOLLRDHUP, {.ptr=this}};
         epoll_ctl(epollFd, EPOLL_CTL_ADD, _fd, &ee);
         myGame = Game();
+        gamePtr = nullptr;
         _points = 0;
         _rank = 0;
         _correct = 0;
-        _order = 'F';
     }
 
     virtual ~Client(){
@@ -158,7 +161,6 @@ public:
     int points() const {return _points;}
     int rank() const {return _rank;}
     int correct() const {return _correct;}
-    char order() const {return _order;}
 
     virtual void handleEvent(uint32_t events) override {
         if(events & EPOLLIN) {
@@ -207,7 +209,7 @@ public:
         printf("removing client %d\n", _fd);
 
         if (myGame.masterFd() == _fd){
-            char buffer[2];
+            char buffer[6];
             sprintf(buffer, "X");    
             sendToAllInGame(myGame.gameNumber(), buffer);
             myGame.remove();
@@ -364,23 +366,29 @@ void sendListOfGames(int clientFd){
 // *************** GAME ******************
 
 void wantMasterTimer(Client& client){
-    char buffer[6];
-    sprintf(buffer, "H%c%d", client.myGame.letter(), client.fd()+10); 
+    printf("into want master time \n");
+    char buffer[8];
+    int sent;
+    if (client.myGame.firstAnswerSent()) sent = 1;
+    else sent = 0;
+    sprintf(buffer, "H%c%d%d", client.myGame.letter(), client.fd()+10, sent); 
     int check = ::write(client.myGame.masterFd(), buffer, sizeof(buffer));
-    //if(check != (int) strlen(buffer)) perror("write failed");
 }
 
 
-void chooseGameNumber(Client& client, int chosenGame){
+void chooseGameNumber(Client& client, int chosenGame, char rounds){
     char str[4];
     int maxGameNumber = 10;
 
     // check if game exist
-    for(Game * game : games){
+    for(auto & game : games){
         // game exist
         if(chosenGame == game->gameNumber()){
-            client.myGame = *game;
-            sprintf(str, "G%dU", client.myGame.gameNumber() );
+            client.gamePtr = game;
+            printf("===== game letter %c", client.gamePtr->letter());
+            //client.myGame = *game;
+            sprintf( str, "G%dU", client.gamePtr->gameNumber() );
+            //sprintf( str, "G%dU", client.myGame.gameNumber() );
             if (game->letter() != '0') wantMasterTimer(client); // if game is pending
             break;
         }
@@ -389,39 +397,42 @@ void chooseGameNumber(Client& client, int chosenGame){
 
     // if new game
     if (chosenGame==0 && client.myGame.gameNumber()==0){
-        // Game * newgame = new Game(maxGameNumber+1, client.fd()) ;
-        // games.insert(newgame);
-        // client.myGame = *newgame;
-        games.insert(new Game(maxGameNumber+1, client.fd()));
-        for(Game * game : games){
+    //if (chosenGame==0 && client.myGame.gameNumber()==0){
+        int thisRound = rounds - '0';
+        games.insert(new Game(maxGameNumber+1, client.fd(), thisRound));
+        for(auto & game : games){
             if(maxGameNumber+1 == game->gameNumber()){
+                client.gamePtr = game;
                 client.myGame = *game;
             }
         }
-
         sprintf(str, "G%dM", client.myGame.gameNumber() );       
     }
 
     // if game number is incorrect
-    else if (chosenGame!=0 && client.myGame.gameNumber()==0){
-        char buffer[2];
+    else if (chosenGame!=0 && client.gamePtr->gameNumber()==0){
+    //else if (chosenGame!=0 && client.myGame.gameNumber()==0){
+        char buffer[6];
         sprintf(buffer, "E"); 
         sendListOfGames(client.fd());
     }  
 
     client.write(str);
 
-    printf("client: %d \t myGame: %d \n", client.fd(), client.myGame.gameNumber());
+    printf("client: %d \t myGame: %d \n", client.fd(), client.gamePtr->gameNumber());
+    //printf("client: %d \t myGame: %d \n", client.fd(), client.myGame.gameNumber());
 }
 
 
 void startGameAndGetLetter(Client& client, char * buffer){
     client.myGame.getNewLetter();
-    sprintf(buffer, "R%c", client.myGame.letter());
+    client.gamePtr->getNewLetter();
+    sprintf(buffer, "R%c%d", client.gamePtr->letter(), client.myGame.roundNumber());
 
     for(Client * anotherClient : clients){
         if (client.myGame.gameNumber() == anotherClient->myGame.gameNumber() ){
             anotherClient->myGame._letter = client.myGame.letter();
+            anotherClient->myGame._roundNumber = client.myGame.roundNumber();
         }
     }
 }
@@ -496,20 +507,22 @@ void handleReloadGame(int fd){
 
 void handleSetGameNumber(char * data, Client& client){
     int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
-    chooseGameNumber(client, chosenGame);
+    chooseGameNumber(client, chosenGame, data[3]);
 }
 
 
 void handleLateClient(char * data){
     int receivedFd = (data[2] - '0')*10 + (data[3] - '0') - 10;
+    int sent;
 
     for(Client * client : clients){
         if (receivedFd == client->fd() ){
             client->myGame._letter = data[1];
-            int timerValue = (data[4] - '0')*10 + (data[5] - '0');
-            
+            int timerValue = (data[4] - '0')*10 + (data[5] - '0');  
+            if (data[6] == '1') client->myGame._firstAnswerSent = true;
+            else client->myGame._firstAnswerSent = true;         
             char buffer[6];
-            sprintf(buffer, "V%c%d", data[1], timerValue);
+            sprintf(buffer, "V%c%d%d", data[1], timerValue, client->myGame.roundNumber());
             client->write(buffer);
 
             break;
@@ -519,7 +532,7 @@ void handleLateClient(char * data){
 
 
 void handleStartGame(Client& client){
-    char buffer[2]; 
+    char buffer[6]; 
     startGameAndGetLetter(client, buffer);          
     sendToAllInGame(client.myGame.gameNumber(), buffer); 
 }
@@ -527,19 +540,24 @@ void handleStartGame(Client& client){
 
 void handleGetAnswersSendTimer(char * data, Client& client){
     client._correct = wordCorrect(data, client.myGame.letter());
-    client._points += calculatePoints(client.correct(), data[1]);
 
-    if (data[1] == 'F' && !client.myGame.firstAnswerSent()){
-        client.myGame._firstAnswerSent = true; 
-        char buffer[2];
+    if (data[1] == 'S' && client.myGame.firstAnswerSent() == false){
+        for (Client * client : clients){
+            if (client->myGame.gameNumber()) client->myGame._firstAnswerSent = true; 
+        }
+        
+        char buffer[6];
         sprintf(buffer, "T");
         sendToAllInGame(client.myGame.gameNumber(), buffer);
+        data[1] = 'F';
     }
+    
+    client._points += calculatePoints(client.correct(), data[1]);
 }
 
 
 void handleAllowScoreRequest(int game){
-    char buffer[2];
+    char buffer[6];
     sprintf(buffer, "W");    
     sendToAllInGame(game, buffer);
 }
@@ -555,12 +573,12 @@ void handleSendPoints(Client& client){
 
 void handleStartNewRoundOrFinishGame(Client& client){
 
-    if (client.myGame.roundNumber() == NUMBER_OF_ROUNDS){
+    if (client.myGame.roundNumber() == client.myGame.lastRound()){
         setAndSendRank(client.myGame.gameNumber());
         client.myGame.remove();
     } 
     else{
-        char buffer[2];           
+        char buffer[6];           
         startGameAndGetLetter(client, buffer);
         sendToAllInGame(client.myGame.gameNumber(), buffer); 
         client.myGame._firstAnswerSent = false; 

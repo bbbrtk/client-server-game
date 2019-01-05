@@ -13,7 +13,6 @@
  *
  *  B pierwsze odpowiedzi niepuste - po stronie klienta if textfiled1 empty and speedstate F show msg i panel
  *  B uproscic wysylanie kolejnosci - po stronie serwera
- *  B wybor liczby rund przez mastera - 2-10 chooseBox - sent with S start game
  *  B wyswietlanie rundy - with letter send
  *
  * potwierdzenie przy kazdym wyslaniu do serwera
@@ -165,7 +164,7 @@ void MyWidget::startTimerCounting(){
 
     if (count==0){
         ui->talkGroup->setEnabled(false);
-        if(speedState == "S" || speedState == "F") sendBtnHit(); // auto send unfinished answers
+        if(speedState == "S") sendBtnHit(); // auto send unfinished answers
     }
     else if (count==-1){
         countingTimer->stop();
@@ -233,34 +232,38 @@ void MyWidget::handleLateClient(QString str){
 
     ui->msgsTextEdit->append("MY TIMER: " + ui->timerNumber->text());
 
-    QString msg = "H" + letter + clientFd + QString::number(timerValue);
+    QString msg = "H" + letter + clientFd + QString::number(timerValue) + QString(str.at(4));
     socket->write(msg.toUtf8());
 }
 
 
 void MyWidget::handleNewRound(QString str){
-    speedState = "F";
+    speedState = "S";
     QChar letter = str.at(1);
+    QChar round = str.at(2);
 
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(true);
     //ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("Round started! Your letter is " + QString(letter) + ".");
     ui->letterLabel->setText(letter);
+    ui->roundNumberLabel->setText(round);
 
     createTimer(true, 30);
 }
 
 
 void MyWidget::handleLateClientNewRound(QString str){
-    speedState = "F";
+    speedState = "S";
     QChar letter = str.at(1);
+    QChar round = str.at(4);
 
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(true);
     //ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("Round IS PENDING, be quick! Your letter is " + QString(letter) + ".");
     ui->letterLabel->setText(letter);
+    ui->roundNumberLabel->setText(round);
 
     QString timerValue = QString(str.at(2))+QString(str.at(3));
     int timerIntValue = timerValue.toInt()-10;
@@ -270,7 +273,7 @@ void MyWidget::handleLateClientNewRound(QString str){
 
 
 void MyWidget::handle10secTimer(){
-    if (speedState != "X") speedState = "S";
+    //if (speedState != "X") speedState = "S";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("10 sec left...");
 
@@ -324,6 +327,7 @@ void MyWidget::handleShowMyRank(QString str){
 
     if (isMaster) isMaster = false;
 
+    ui->roundNumberLabel->setText("0");
     ui->connectGroup->setEnabled(false);
     ui->startGameBox->setEnabled(false);
     ui->startGameBtn->setEnabled(false);
@@ -423,8 +427,9 @@ void MyWidget::reloadGameBtnHit(){
 
 void MyWidget::chooseGameBtnHit(){
     QString str = ui->chooseGameList->currentItem()->text();
-    if(str=="New Game") str = "G00";
-    else str = "G" + str;
+    QString rounds = QString::number(ui->roundSpinNumber->value());
+    if(str=="New Game") str = "G00" + rounds;
+    else str = "G" + str + rounds;
     socket->write(str.toUtf8());
 }
 
@@ -441,10 +446,10 @@ void MyWidget::sendBtnHit(){
     lineEditList.append(ui->msgLineEdit); lineEditList.append(ui->msgLineEdit2);
     lineEditList.append(ui->msgLineEdit3); lineEditList.append(ui->msgLineEdit4);
 
-    if ( (speedState == "S" || speedState == "F" ) && count == 0) speedState = "T"; // time passed and answers still not sent
+    if ( speedState == "S" && count == 0) speedState = "T"; // time passed and answers still not sent
     QString str = "A" + speedState + showAndJoinInput(lineEditList);
     str = str.toUpper();
-    socket->write(str.toUtf8());
+    if (speedState != "X") socket->write(str.toUtf8());
     speedState = "X"; // answers sent, change state
 
     ui->talkGroup->setEnabled(false);
