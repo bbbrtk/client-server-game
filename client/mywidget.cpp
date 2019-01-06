@@ -11,10 +11,6 @@
 /*
     TODO
  *
- *  B pierwsze odpowiedzi niepuste - po stronie klienta if textfiled1 empty and speedstate F show msg i panel
- *  B uproscic wysylanie kolejnosci - po stronie serwera
- *  B wyswietlanie rundy - with letter send
- *
  * potwierdzenie przy kazdym wyslaniu do serwera
  * wykrywanie rozłączanie mastera od sieci
  * wykrywanie rozłączenia clienta
@@ -228,8 +224,6 @@ void MyWidget::handleLateClient(QString str){
     QString clientFd = QString(str.at(2))+QString(str.at(3));
 
     int timerValue = ui->timerNumber->text().toInt() + 10;
-    //QString timer = QStringLiteral("%1").arg(timerValue);
-
     ui->msgsTextEdit->append("MY TIMER: " + ui->timerNumber->text());
 
     QString msg = "H" + letter + clientFd + QString::number(timerValue) + QString(str.at(4));
@@ -254,6 +248,7 @@ void MyWidget::handleNewRound(QString str){
 
 
 void MyWidget::handleLateClientNewRound(QString str){
+    ui->msgsTextEdit->append("Round IS ");
     speedState = "S";
     QChar letter = str.at(1);
     QChar round = str.at(4);
@@ -273,7 +268,6 @@ void MyWidget::handleLateClientNewRound(QString str){
 
 
 void MyWidget::handle10secTimer(){
-    //if (speedState != "X") speedState = "S";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("10 sec left...");
 
@@ -345,10 +339,6 @@ void MyWidget::handleRemovingMaster(){
         ui->msgsTextEdit->clear();
         ui->msgsTextEdit->append("<span style=\"color: red\">Your Game Master quit game. Game is finished.</span>");
         clearTimerCounting(0);
-
-        // quit game and get my rank
-        QString str = "Y";
-        socket->write(str.toUtf8());
     }
 }
 
