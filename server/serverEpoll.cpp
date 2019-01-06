@@ -16,8 +16,10 @@
 #include <vector>
 #include <algorithm>
 
-#define NUMBER_OF_ROUNDS 2
-#define GAME_REMOVING_DELAY 3000000 // 3 sec
+#define NUMBER_OF_ROUNDS 1
+#define GAME_REMOVING_DELAY 2000000 // 2 sec
+
+typedef std::pair<int,int> intPair;
 
 class Client;
 class Game;
@@ -28,9 +30,12 @@ int epollFd;
 std::unordered_set<Client*> clients;
 std::unordered_set<Game*> games;
 
-typedef std::pair<int,int> intPair;
-
 void ctrl_c(int);
+
+uint16_t readPort(char * txt);
+
+void setReuseAddr(int sock);
+
 
 void sendToAll(char * buffer);
 
@@ -40,92 +45,142 @@ void sendToAllInGame(int game, char * buffer);
 
 void sendListOfGames(int clientFd);
 
-int chooseGameNumber(int _fd, int _game, int chosenGame, char * str);
 
-void startGameAndGetLetter(int _game, char * buffer);
+void wantMasterTimer(Client& client);
 
-void setClientsLetter(int _game, char letter);
+void chooseGameNumber(Client& client, int chosenGame, char rounds);
 
-uint16_t readPort(char * txt);
+void startGameAndGetLetter(Client& client, char * buffer);
 
-void setReuseAddr(int sock);
+void setClientsLetter(int game, char letter);
 
 int wordCorrect(char * data, char letter);
 
 int calculatePoints(int correct, char letter);
 
-void setAndSendRank(int _game);
+void setAndSendRank(int game);
+
+
+void handleReloadGame(Client& client);
+
+void handleSetGameNumber(char * data, Client& client);
+
+void handleLateClient(char * data);
+
+void handleStartGame(Client& client);
+
+void handleGetAnswersSendTimer(char * data, Client& client);
+
+void handleAllowScoreRequest(int game);
+
+void handleSendPoints(Client& client);
+
+void handleStartNewRoundOrFinishGame(Client& client);
 
 
 // *************** CLASSES ******************
 
 class Game {
     int _gameNumber;
-    char _letter;
-    int _roundNumber;
     int _masterFd;
+    int _roundNumber;
+    int _lastRound;
+    char _letter;
+    bool _firstAnswerSent;
 
     public:
-        Game(int number, int master) : _gameNumber(number) {
+        Game(){
+            _gameNumber = 0;
             _roundNumber = 0;
+            _lastRound = 0;
+            _masterFd = 0;
+            _letter = '0';
+            _firstAnswerSent = false;
+        }
+
+        Game(int number, int master, int rounds) : _gameNumber(number) {
+            _roundNumber = 0;
+            _lastRound = rounds;
             _masterFd = master;
+            _letter = '0';
+            _firstAnswerSent = false;
         }
 
         virtual ~Game(){}
 
+        // getters
         int gameNumber() const {return _gameNumber;}
         char letter() const {return _letter;}
+        int lastRound() const {return _lastRound;}
         int roundNumber() const {return _roundNumber;}
         int masterFd() const {return _masterFd;}
+        bool firstAnswerSent() const {return _firstAnswerSent;}
+
+        // setters
+        void gameNumber(int a) {_gameNumber = a;}
+        void letter(char a) {_letter = a;}
+        void lastRound(int a) {_lastRound = a;}
+        void roundNumber(int a) {_roundNumber = a;}
+        void masterFd(int a) {_masterFd = a;}
+        void firstAnswerSent(bool a) {_firstAnswerSent = a;}
 
         void getNewLetter(){
             _roundNumber++;
             _letter = char ( rand()%(90-65+1)+65 ); // leter from ascii A to Z
         }
 
-        void remove() {
-        printf("removing game %d\n", _gameNumber);
-        usleep(GAME_REMOVING_DELAY);
-        games.erase(this);
-        delete this;
-        printf("game REMOVED \n");
-    }
+        void remove(){
+            if (_gameNumber != 0){
+                printf("removing game %d\n", _gameNumber);
+                games.erase(this);   
+                delete this;
+                printf("game REMOVED \n");
+            }
+        }
 };
 
+
+Game tempGame = Game();
 
 struct Handler {
     virtual ~Handler(){}
     virtual void handleEvent(uint32_t events) = 0;
 };
 
-
 class Client : public Handler{
     int _fd;
-    
-public:
-    int _game;
     int _points;
     int _rank;
     int _correct;
-    char _currentLetter;
+    
+public:
+    Game * myGame;
 
     Client(int fd) : _fd(fd) {
         epoll_event ee {EPOLLIN|EPOLLRDHUP, {.ptr=this}};
         epoll_ctl(epollFd, EPOLL_CTL_ADD, _fd, &ee);
-        _game = 0;
+        myGame =  &tempGame;
         _points = 0;
         _rank = 0;
         _correct = 0;
     }
+
     virtual ~Client(){
         epoll_ctl(epollFd, EPOLL_CTL_DEL, _fd, nullptr);
         shutdown(_fd, SHUT_RDWR);
         close(_fd);
     }
 
+    // getters
     int fd() const {return _fd;}
-    int game() const {return _game;}
     int points() const {return _points;}
+    int rank() const {return _rank;}
+    int correct() const {return _correct;}
+
+    // setters
+    void points(int a) {_points = a;}
+    void rank(int a) {_rank = a;}
+    void correct(int a) {_correct = a;}
 
     virtual void handleEvent(uint32_t events) override {
         if(events & EPOLLIN) {
@@ -137,114 +192,56 @@ public:
     }
 
     void read(uint32_t events){
-        char dataFromRead[60];
-        char data[5];
+        char dataFromRead[60], data[9];
 
         ssize_t count  = ::read(_fd, dataFromRead, sizeof(dataFromRead)-1);
         if(count <= 0) events |= EPOLLERR;
 
-        // get only first 7 most important chars
-        for (int i=0; i<6; i++) data[i] = dataFromRead[i];
+        for (int i=0; i<8; i++) data[i] = dataFromRead[i];
         printf("client: %d \t READ: %s \n", _fd, data);
 
-        // handle ReloadGameBtn
-        if (data[0] == 'L'){
-            usleep(GAME_REMOVING_DELAY);
-            sendListOfGames(_fd);
-        }
+        if (data[0] == 'L') handleReloadGame(*this);
 
-        // set game number
-        else if (data[0] == 'G'){
-            int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
-            char str[4];
-            _game = chooseGameNumber(_fd, _game, chosenGame, str);
-            write(str);            
-        }
+        else if (data[0] == 'G') handleSetGameNumber(data, *this);
 
-        // start game
-        else if (data[0] == 'S'){
-            char buffer[2];           
-            startGameAndGetLetter(_game, buffer);
-            setClientsLetter(_game, buffer[1]);
-            sendToAllInGame(_game, buffer); 
-        }
+        else if (data[0] == 'H') handleLateClient(data);
 
-        // get answers, send 10-sec-timer msg
-        else if (data[0] == 'A'){
-            _correct = wordCorrect(data, _currentLetter);
-            _points += calculatePoints(_correct, data[1]);
+        else if (data[0] == 'S') handleStartGame(*this);
 
-            if (data[1] == 'F'){
-                char buffer[2];
-                sprintf(buffer, "T");
-                sendToAllInGame(_game, buffer);
-            }
-        }
+        else if (data[0] == 'A') handleGetAnswersSendTimer(data, *this);
 
-        // send allowance to request score 
-        else if (data[0] == 'P'){       
-            char buffer[2];
-            sprintf(buffer, "W");    
-            sendToAllInGame(_game, buffer);
-        }
+        else if (data[0] == 'P') handleAllowScoreRequest(myGame->gameNumber());
 
-        // send points
-        else if (data[0] == 'W'){
-            char buffer[6];
-            int points = _points + 100;
-            sprintf(buffer, "P%d%d", _correct, points);
-            write(buffer);
-        }
+        else if (data[0] == 'W') handleSendPoints(*this);
 
-        // start new round or finish game
-        else if (data[0] == 'B'){
-            for(Game * game : games){
-                if(_game == game->gameNumber()){
-                    if (game->roundNumber() == NUMBER_OF_ROUNDS){
-                        setAndSendRank(_game);
-                        game->remove();
-                    } 
-                    else{
-                        char buffer[2];           
-                        startGameAndGetLetter(_game, buffer);
-                        setClientsLetter(_game, buffer[1]);
-                        sendToAllInGame(_game, buffer); 
-                    }
-                    break;
-                }
-            }
-        }
+        else if (data[0] == 'B') handleStartNewRoundOrFinishGame(*this);
 
-        // reset game after removing master
-        else if (data[0] == 'Y'){
-            setAndSendRank(_game);
-        }
     }
 
-    // fix to default option
     void write(char * buffer){
-        int check = ::write(_fd, buffer, strlen(buffer));
-        if(check != (int) strlen(buffer)) perror("write failed");
+        if ( ::write(_fd, buffer, strlen(buffer)) != (int) strlen(buffer) ) perror("write failed");
         printf("client: %d \t WRITE: %s \n", _fd, buffer);
     }
 
     void remove() {
         printf("removing client %d\n", _fd);
 
-        for(Game * game : games){
-            if(game->masterFd() == _fd){
-                char buffer[2];
-                sprintf(buffer, "X");    
-                sendToAllInGame(_game, buffer);
-                game->remove();
-                break;
-            }
+        if (myGame->masterFd() == _fd){
+            char buffer[6];
+            sprintf(buffer, "X");    
+            sendToAllInGame(myGame->gameNumber(), buffer);
+            setAndSendRank(myGame->gameNumber());
+
+            Game * deleteGame = myGame;
+            myGame = &tempGame;
+            deleteGame->remove();
         }
+
+        myGame = &tempGame;
         clients.erase(this);
         delete this;
 
         printf("client REMOVED \n");
-        
     }
 };
 
@@ -260,7 +257,6 @@ class : Handler {
             if(clientFd == -1) error(1, errno, "accept failed");
             
             printf("new connection from: %s:%hu (fd: %d)\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), clientFd);
-            
             clients.insert(new Client(clientFd));
             sendListOfGames(clientFd);
         }
@@ -307,10 +303,9 @@ int main(int argc, char ** argv){
             ctrl_c(SIGINT);
         }
 
-        // LOL
         ((Handler*)ee.data.ptr)->handleEvent(ee.events);
 
-        printf("_____next_while_iteration_____: \n");
+        printf("\t ----------------- \n");
     }
 }
 
@@ -335,8 +330,10 @@ void setReuseAddr(int sock){
 void ctrl_c(int){
     for(Client * client : clients)
         delete client;
+    for(Game * game : games)
+        delete game;
     close(servFd);
-    printf("\n Closing server \n");
+    printf(" \n Closing server \n");
     exit(0);
 }
 
@@ -348,7 +345,6 @@ void sendToAll(char * buffer){
     while(it!=clients.end()){
         Client * client = *it;
         it++;
-        ::write(client->fd(), &buffer, sizeof(buffer));       
         client->write(buffer);
     }
 }
@@ -370,7 +366,7 @@ void sendToAllInGame(int game, char * buffer){
     while(it!=clients.end()){
         Client * client = *it;
         it++;
-        if(client->game()==game)
+        if(client->myGame->gameNumber()==game)
             client->write(buffer);
     }
 }
@@ -385,61 +381,63 @@ void sendListOfGames(int clientFd){
     }
     char tab[100];
     strcpy(tab, buffer.c_str());
-
-    int check = write(clientFd, tab, strlen(tab));
-    if(check != (int) strlen(tab)) perror("write failed");
+    if ( ::write(clientFd, tab, strlen(tab)) != (int) strlen(tab) ) perror("write failed");
 }
 
 
 // *************** GAME ******************
 
-/*  set game number: if new game - become master and add to game, else - add to existing game */
-int chooseGameNumber(int _fd, int _game, int chosenGame, char * str){
+void wantMasterTimer(Client& client){
+    char buffer[8];
+    int sent;
+    if (client.myGame->firstAnswerSent()) sent = 1;
+    else sent = 0;
+
+    sprintf(buffer, "H%c%d%d", client.myGame->letter(), client.fd()+10, sent); 
+    int check = ::write(client.myGame->masterFd(), buffer, sizeof(buffer));
+}
+
+
+void chooseGameNumber(Client& client, int chosenGame, char rounds){
+    char str[6];
     int maxGameNumber = 10;
-    
+
     // check if game exist
-    for(Game * game : games){
+    for(auto & game : games){
         // game exist
         if(chosenGame == game->gameNumber()){
-            _game = chosenGame;
-            sprintf(str, "G%dU", _game );
+            client.myGame = game;
+            sprintf( str, "G%dU", client.myGame->gameNumber() );
+            if (game->letter() != '0') wantMasterTimer(client); // if game is pending
             break;
         }
         if (maxGameNumber < game->gameNumber()) maxGameNumber = game->gameNumber();
     }
 
     // if new game
-    if (chosenGame==0 && _game==0){
-        games.insert( new Game(maxGameNumber+1, _fd) );
-        _game = maxGameNumber+1;
-        sprintf(str, "G%dM", _game );
+    if (chosenGame==0 ){
+        games.insert(new Game(maxGameNumber+1, client.fd(), rounds-'0'));
+        for(auto & game : games){
+            if(maxGameNumber+1 == game->gameNumber()) client.myGame = game;
+        }
+        sprintf(str, "G%dM", client.myGame->gameNumber() );       
     }
 
-    // if number game is incorrect
-    else if (chosenGame!=0 && _game==0) sendListOfGames(_fd); 
+    // if game number is incorrect
+    else if (chosenGame!=0 && client.myGame==&tempGame){
+        char buffer[6];
+        sprintf(buffer, "E"); 
+        sendListOfGames(client.fd());
+    }  
 
-    printf("client: %d \t myGame: %d \n", _fd, _game);
-    return _game;
+    client.write(str);
+    printf("client: %d \t myGame: %d \n", client.fd(), client.myGame->gameNumber());
 }
 
 
-void startGameAndGetLetter(int _game, char * buffer){
-    for(Game * game : games){
-        if (_game == game->gameNumber() ){
-            game->getNewLetter();
-            char letter = game->letter();
-            sprintf(buffer, "R%c", letter);
-        }
-    }
-}
-
-
-void setClientsLetter(int _game, char letter){
-    for(Client * client : clients){
-        if (_game == client->game() ){
-            client->_currentLetter = letter;
-        }
-    }
+void startGameAndGetLetter(Client& client, char * buffer){
+    client.myGame->getNewLetter();
+    sprintf(buffer, "R%c%d", client.myGame->letter(), client.myGame->roundNumber());
 }
 
 
@@ -462,19 +460,19 @@ int calculatePoints(int correct, char letter){
 }
 
 
-void setAndSendRank(int _game){
+void setAndSendRank(int game){
     std::map <int, int> rankMap;
     std::vector<intPair> rankVector;
     int rank = 0;
 
     for(Client * client : clients){
-        if ( _game == client->game() ){
+        if ( game == client->myGame->gameNumber() ){
             rank++;
-            rankMap[client->fd()] = client->points();           
-            client->_game = 0;
-            client->_points = 0;
-            client->_rank = 0;
-            client->_correct = 0;
+            rankMap[client->fd()] = client->points();        
+            client->points(0);
+            client->rank(0);
+            client->correct(0);
+            if (client->myGame->masterFd() != client->fd()) { client->myGame = &tempGame;  printf("client %d RESETED \n", client->fd()); }
         }
     }
 
@@ -496,21 +494,96 @@ void setAndSendRank(int _game){
         int points = intPair.second+100;
         sprintf(str, "K%dR%dX", rank, points);
         rank--;
-        if (write(intPair.first, str, strlen(str)) != (int) strlen(str)) perror("write failed");
+        ::write(intPair.first, str, sizeof(str));
+        //if (::write(intPair.first, str, sizeof(str)) != (int) sizeof(str)) perror("write failed");
     }
 
     rankVector.clear();
     rankMap.clear();
 }
 
+// *************** HANDLERS ******************
+
+void handleReloadGame(Client& client){
+    client.myGame = &tempGame;
+    sendListOfGames(client.fd());
+}
 
 
-    // iterate through map and send score
-    // for (std::map<int, int>::iterator i = rankMap.begin(); i != rankMap.end(); i++){
-    //     printf("key: %d, value %d \n", i->first, i->second);
-    //     char str[8];
-    //     int points = i->first+100;
-    //     sprintf(str, "K%dR%dX", rank, points);
-    //     rank--;
-    //     if (write(i->second, str, strlen(str)) != (int) strlen(str)) perror("write failed");
-    // }
+void handleSetGameNumber(char * data, Client& client){
+    int chosenGame = (data[1] - '0')*10 + (data[2] - '0');
+    chooseGameNumber(client, chosenGame, data[3]);
+}
+
+
+void handleLateClient(char * data){
+    int receivedFd = (data[2] - '0')*10 + (data[3] - '0') - 10;
+    int sent;
+
+    for(Client * client : clients){
+        if (receivedFd == client->fd() ){
+            client->myGame->letter(data[1]);
+            int timerValue = (data[4] - '0')*10 + (data[5] - '0');  
+
+            if (data[6] == '1') client->myGame->firstAnswerSent(true);
+            else client->myGame->firstAnswerSent(false);      
+
+            char buffer[6];
+            sprintf(buffer, "V%c%d%d", data[1], timerValue, client->myGame->roundNumber());
+            client->write(buffer);
+
+            break;
+        }
+    }
+}
+
+
+void handleStartGame(Client& client){
+    char buffer[6]; 
+    startGameAndGetLetter(client, buffer);          
+    sendToAllInGame(client.myGame->gameNumber(), buffer); 
+}
+
+
+void handleGetAnswersSendTimer(char * data, Client& client){
+    client.correct( wordCorrect(data, client.myGame->letter()) );
+
+    if (data[1] == 'S' && client.myGame->firstAnswerSent() == false){
+        client.myGame->firstAnswerSent(true);       
+        char buffer[6];
+        sprintf(buffer, "T");
+        sendToAllInGame(client.myGame->gameNumber(), buffer);
+        data[1] = 'F';
+    }
+    
+    client.points( client.points() + calculatePoints(client.correct(), data[1]) );
+}
+
+
+void handleAllowScoreRequest(int game){
+    char buffer[6];
+    sprintf(buffer, "W");    
+    sendToAllInGame(game, buffer);
+}
+
+
+void handleSendPoints(Client& client){
+    char buffer[6];
+    int points = client.points() + 100;
+    sprintf(buffer, "P%d%d", client.correct(), points);
+    client.write(buffer);
+}
+
+
+void handleStartNewRoundOrFinishGame(Client& client){
+    if (client.myGame->roundNumber() == client.myGame->lastRound()){
+        setAndSendRank(client.myGame->gameNumber());
+        client.myGame->remove();
+    } 
+    else{
+        char buffer[6];           
+        startGameAndGetLetter(client, buffer);
+        sendToAllInGame(client.myGame->gameNumber(), buffer); 
+        client.myGame->firstAnswerSent(false); 
+    }
+}

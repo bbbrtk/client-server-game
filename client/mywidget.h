@@ -45,7 +45,10 @@ protected:
     void analyzeRead(QByteArray);
     void handleListOfGames(QString);
     void handleGameNumber(QString);
+    void handleIncorrectGameNumber();
+    void handleLateClient(QString);
     void handleNewRound(QString);
+    void handleLateClientNewRound(QString);
     void handle10secTimer();
     void handleWantMyScore();
     void handleShowMyScore(QString);
@@ -60,7 +63,6 @@ private:
     int count;
     QString speedState; // F - first, S - second, T - third, X - answers sent
     bool isMaster;
-
 
 };
 

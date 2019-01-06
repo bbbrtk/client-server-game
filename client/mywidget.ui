@@ -27,9 +27,82 @@
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
-       <widget class="QLCDNumber" name="timerNumber">
-        <property name="frameShape">
-         <enum>QFrame::NoFrame</enum>
+       <widget class="QLabel" name="timerNumber">
+        <property name="maximumSize">
+         <size>
+          <width>100</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <family>Courier 10 Pitch</family>
+          <pointsize>20</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="mouseTracking">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>0</string>
+        </property>
+        <property name="textFormat">
+         <enum>Qt::RichText</enum>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="roundNumberName">
+        <property name="minimumSize">
+         <size>
+          <width>80</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>60</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <family>Courier 10 Pitch</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>ROUND</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="roundNumberLabel">
+        <property name="maximumSize">
+         <size>
+          <width>30</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <family>Courier 10 Pitch</family>
+          <pointsize>16</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>0</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
       </item>
@@ -37,7 +110,7 @@
        <widget class="QLabel" name="gameNumberLabelLabel">
         <property name="maximumSize">
          <size>
-          <width>120</width>
+          <width>60</width>
           <height>16777215</height>
          </size>
         </property>
@@ -50,7 +123,7 @@
          </font>
         </property>
         <property name="text">
-         <string>GAME N.</string>
+         <string>GAME</string>
         </property>
         <property name="alignment">
          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -68,7 +141,7 @@
         <property name="font">
          <font>
           <family>Courier 10 Pitch</family>
-          <pointsize>22</pointsize>
+          <pointsize>16</pointsize>
           <weight>75</weight>
           <bold>true</bold>
          </font>
@@ -155,6 +228,19 @@
        </widget>
       </item>
       <item>
+       <widget class="QSpinBox" name="roundSpinNumber">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>9</number>
+        </property>
+        <property name="singleStep">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="reloadGameBtn">
         <property name="text">
          <string>Reload</string>
@@ -236,16 +322,32 @@
        </widget>
       </item>
       <item row="7" column="1">
-       <widget class="QLineEdit" name="msgLineEdit4"/>
+       <widget class="QLineEdit" name="msgLineEdit4">
+        <property name="mouseTracking">
+         <bool>false</bool>
+        </property>
+       </widget>
       </item>
       <item row="3" column="1">
-       <widget class="QLineEdit" name="msgLineEdit"/>
+       <widget class="QLineEdit" name="msgLineEdit">
+        <property name="mouseTracking">
+         <bool>true</bool>
+        </property>
+       </widget>
       </item>
       <item row="6" column="1">
-       <widget class="QLineEdit" name="msgLineEdit3"/>
+       <widget class="QLineEdit" name="msgLineEdit3">
+        <property name="mouseTracking">
+         <bool>false</bool>
+        </property>
+       </widget>
       </item>
       <item row="4" column="1">
-       <widget class="QLineEdit" name="msgLineEdit2"/>
+       <widget class="QLineEdit" name="msgLineEdit2">
+        <property name="mouseTracking">
+         <bool>false</bool>
+        </property>
+       </widget>
       </item>
       <item row="4" column="0">
        <widget class="QLabel" name="label2City">
@@ -330,9 +432,20 @@
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <tabstops>
-  <tabstop>portSpinBox</tabstop>
   <tabstop>hostLineEdit</tabstop>
+  <tabstop>portSpinBox</tabstop>
   <tabstop>conectBtn</tabstop>
+  <tabstop>chooseGameList</tabstop>
+  <tabstop>reloadGameBtn</tabstop>
+  <tabstop>chooseGameBtn</tabstop>
+  <tabstop>startGameBtn</tabstop>
+  <tabstop>msgsTextEdit</tabstop>
+  <tabstop>msgLineEdit</tabstop>
+  <tabstop>msgLineEdit2</tabstop>
+  <tabstop>msgLineEdit3</tabstop>
+  <tabstop>msgLineEdit4</tabstop>
+  <tabstop>sendBtn</tabstop>
+  <tabstop>quitBtn</tabstop>
  </tabstops>
  <resources/>
  <connections/>
