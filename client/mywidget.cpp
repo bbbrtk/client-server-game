@@ -451,8 +451,8 @@ void MyWidget::quitBtnHit(){
     MyWidget::close();
 }
 
-//*******************************************
+//******************************************
 //                  OTHER
-//*******************************************
+//******************************************
 
 //void MyWidget::socketError(QAbstractSocket::SocketError socketError) {}

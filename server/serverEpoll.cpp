@@ -385,7 +385,7 @@ void sendListOfGames(int clientFd){
 }
 
 
-// *************** GAME ******************
+// *************** GAME *****************
 
 void wantMasterTimer(Client& client){
     char buffer[8];
