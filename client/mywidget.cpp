@@ -15,6 +15,7 @@
  * wykrywanie rozłączanie mastera od sieci
  * wykrywanie rozłączenia clienta
  * wykkrywanie rozlaczenia serwera od sieci
+ * obsluga pozostalych bledow
  * socketError()
  *
 
