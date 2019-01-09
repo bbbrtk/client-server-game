@@ -21,6 +21,7 @@ public:
     ~MyWidget();
 
 protected:
+    bool timerOn = false;
     QTimer * connTimeoutTimer; // connection timeout
     QTimer * countingTimer; // game clock
     QTcpSocket * socket;

@@ -11,13 +11,7 @@
 /*
     TODO
  *
- * potwierdzenie przy kazdym wyslaniu do serwera
- * wykrywanie rozłączanie mastera od sieci
- * wykrywanie rozłączenia clienta
- * wykkrywanie rozlaczenia serwera od sieci
- * obsluga pozostalych bledow
- * socketError()
- *
+ * zerowanie timera przy rozłączeniu od internetu jesli nie jest wlaczony - discon from server
 
 */
 
@@ -35,8 +29,6 @@ MyWidget::MyWidget(QWidget *parent) : QWidget(parent), ui(new Ui::MyWidget) {
     connect(ui->chooseGameBtn, &QPushButton::clicked, this, &MyWidget::chooseGameBtnHit);
     connect(ui->startGameBtn, &QPushButton::clicked, this, &MyWidget::startGameBtnHit);
     connect(ui->quitBtn, &QPushButton::clicked, this, &MyWidget::quitBtnHit);
-
-    //QLabel *q = new QLabel(text, referencja_do_rodzica) - zeby korzystaz z automatycznego zwalniania pamieci
 }
 
 
@@ -54,10 +46,17 @@ MyWidget::~MyWidget() {
 /* handle: disconnect from server*/
 void MyWidget::socketDisconnected() {
     socket->disconnectFromHost();
+    clearTimerCounting(0);
+
+    ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("<span style=\"color: red\">Disconnected from server</span>");
+
     ui->connectGroup->setEnabled(true);
     ui->gameNumberLabel->setText("-");
+    ui->roundNumberLabel->setText("0");
+    ui->letterLabel->setText("");
     ui->startGameBox->setEnabled(false);
+    ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(false);
 }
 
@@ -111,6 +110,7 @@ QString MyWidget::showAndJoinInput(QList<QLineEdit*> qLineEditList){
         mainText += " | " + text;
         mainStr += text.at(0); // only first letter
     }
+    ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("<span style=\"color: blue\">" + mainText + "</span>");
     return mainStr;
 }
@@ -127,17 +127,20 @@ void MyWidget::clearInputFields(QList<QLineEdit*> qLineEditList){
 
 /* reset old timer and set new*/
 void MyWidget::clearTimerCounting(int seconds){
-    if( countingTimer->isActive() ){
-        countingTimer->stop();
-        countingTimer->deleteLater();
+    if(timerOn){
+        if( countingTimer->isActive() ){
+            countingTimer->stop();
+            countingTimer->deleteLater();
+        }
+        count = seconds;
+        ui->timerNumber->setText(QString::number(count));
     }
-    count = seconds;
-    ui->timerNumber->setText(QString::number(count));
 }
 
 
 /* create and set timer */
 void MyWidget::createTimer(bool isFirstTimer, int seconds){
+    timerOn = true;
     // main timer
     if (isFirstTimer){
         countingTimer = new QTimer(this);
@@ -225,7 +228,6 @@ void MyWidget::handleLateClient(QString str){
     QString clientFd = QString(str.at(2))+QString(str.at(3));
 
     int timerValue = ui->timerNumber->text().toInt() + 10;
-    ui->msgsTextEdit->append("MY TIMER: " + ui->timerNumber->text());
 
     QString msg = "H" + letter + clientFd + QString::number(timerValue) + QString(str.at(4));
     socket->write(msg.toUtf8());
@@ -239,7 +241,7 @@ void MyWidget::handleNewRound(QString str){
 
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(true);
-    //ui->msgsTextEdit->clear();
+
     ui->msgsTextEdit->append("Round started! Your letter is " + QString(letter) + ".");
     ui->letterLabel->setText(letter);
     ui->roundNumberLabel->setText(round);
@@ -269,14 +271,16 @@ void MyWidget::handleLateClientNewRound(QString str){
 
 
 void MyWidget::handle10secTimer(){
-    ui->msgsTextEdit->clear();
-    ui->msgsTextEdit->append("10 sec left...");
+    //ui->msgsTextEdit->clear();
+    if (speedState != "X") ui->msgsTextEdit->append("10 sec left...");
 
     createTimer(false, 10);
 }
 
 
 void MyWidget::handleWantMyScore(){
+    ui->msgsTextEdit->clear();
+    ui->msgsTextEdit->append("Time is up. New round and your score will show in 5 sec...");
     QString str = "W";
     socket->write(str.toUtf8());
 }
@@ -292,9 +296,9 @@ void MyWidget::handleShowMyScore(QString str){
     QString infoBox = "<b>Last round - correct: " + QString(str.at(1)) + "/4, points: " + points + ".</b>";
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append(infoBox);
+    usleep(NEXT_ROUND_AFTER); // sleep
 
     if (isMaster){
-        usleep(NEXT_ROUND_AFTER); // sleep for 5 sec
         QString str = "B"; // start next round
         socket->write(str.toUtf8());
     }
@@ -323,6 +327,7 @@ void MyWidget::handleShowMyRank(QString str){
     if (isMaster) isMaster = false;
 
     ui->roundNumberLabel->setText("0");
+    ui->letterLabel->setText("");
     ui->connectGroup->setEnabled(false);
     ui->startGameBox->setEnabled(false);
     ui->startGameBtn->setEnabled(false);
@@ -340,6 +345,11 @@ void MyWidget::handleRemovingMaster(){
         ui->msgsTextEdit->clear();
         ui->msgsTextEdit->append("<span style=\"color: red\">Your Game Master quit game. Game is finished.</span>");
         clearTimerCounting(0);
+        ui->connectGroup->setEnabled(true);
+        ui->gameNumberLabel->setText("-");
+        ui->letterLabel->setText("");
+        ui->startGameBox->setEnabled(false);
+        ui->talkGroup->setEnabled(false);
     }
 }
 
@@ -452,8 +462,5 @@ void MyWidget::quitBtnHit(){
     MyWidget::close();
 }
 
-//******************************************
-//                  OTHER
-//******************************************
 
 //void MyWidget::socketError(QAbstractSocket::SocketError socketError) {}

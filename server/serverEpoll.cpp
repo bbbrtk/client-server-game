@@ -216,6 +216,8 @@ public:
 
         else if (data[0] == 'B') handleStartNewRoundOrFinishGame(*this);
 
+        //else if (data[0] == 'V')
+
     }
 
     void write(char * buffer){
@@ -472,7 +474,7 @@ void setAndSendRank(int game){
             client->points(0);
             client->rank(0);
             client->correct(0);
-            if (client->myGame->masterFd() != client->fd()) { client->myGame = &tempGame;  printf("client %d RESETED \n", client->fd()); }
+            if (client->myGame->masterFd() != client->fd()) client->myGame = &tempGame;  
         }
     }
 
@@ -490,12 +492,12 @@ void setAndSendRank(int game){
 
     for (auto const &intPair: rankVector) {
         //printf("points: %d, client %d \n", intPair.second, intPair.first);
-        char str[8];
+        char str[10];
         int points = intPair.second+100;
         sprintf(str, "K%dR%dX", rank, points);
         rank--;
         ::write(intPair.first, str, sizeof(str));
-        //if (::write(intPair.first, str, sizeof(str)) != (int) sizeof(str)) perror("write failed");
+        if (::write(intPair.first, str, sizeof(str)) != (int) sizeof(str)) perror("write failed");
     }
 
     rankVector.clear();
