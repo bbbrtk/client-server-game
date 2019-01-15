@@ -345,10 +345,10 @@ void MyWidget::handleRemovingMaster(){
         ui->msgsTextEdit->clear();
         ui->msgsTextEdit->append("<span style=\"color: red\">Your Game Master quit game. Game is finished.</span>");
         clearTimerCounting(0);
-        ui->connectGroup->setEnabled(true);
+        ui->startGameBox->setEnabled(true);
         ui->gameNumberLabel->setText("-");
+        ui->roundNumberLabel->setText("0");
         ui->letterLabel->setText("");
-        ui->startGameBox->setEnabled(false);
         ui->talkGroup->setEnabled(false);
     }
 }

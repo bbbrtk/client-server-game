@@ -232,6 +232,7 @@ public:
             char buffer[6];
             sprintf(buffer, "X");    
             sendToAllInGame(myGame->gameNumber(), buffer);
+            usleep(100000);
             setAndSendRank(myGame->gameNumber());
 
             Game * deleteGame = myGame;
@@ -530,7 +531,8 @@ void handleLateClient(char * data){
             if (data[6] == '1') client->myGame->firstAnswerSent(true);
             else client->myGame->firstAnswerSent(false);      
 
-            char buffer[6];
+            char buffer[9];
+            usleep(50000);
             sprintf(buffer, "V%c%d%d", data[1], timerValue, client->myGame->roundNumber());
             client->write(buffer);
 
