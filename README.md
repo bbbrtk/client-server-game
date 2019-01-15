@@ -1,4 +1,4 @@
-### client-server game
+### client-server game (unfinished)
 
 to run server:
 
@@ -7,5 +7,15 @@ to run server:
 
 to run client:
 
-    open project in QtCreator
-    than build and run
+    open project (client/CMakeLists.txt) in QtCreator
+    build and run
+
+##### requirements:
+Qt Creator 4.6.2
+
+Based on Qt 5.11.1 (GCC 8.1.0, 64 bit)
+
+cmake 3.0.0
+
+##### made on:
+Kubuntu 18.10
