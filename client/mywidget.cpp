@@ -8,12 +8,6 @@
 #define TIMER_WAIT_B4_SEND 300000 // 0,3 sec (usleep)
 #define NEXT_ROUND_AFTER 5000000 // 5 sec (usleep)
 
-/*
-    TODO
- *
- * zerowanie timera przy rozłączeniu od internetu jesli nie jest wlaczony - discon from server
-
-*/
 
 MyWidget::MyWidget(QWidget *parent) : QWidget(parent), ui(new Ui::MyWidget) {
     ui->setupUi(this);
@@ -51,13 +45,13 @@ void MyWidget::socketDisconnected() {
     ui->msgsTextEdit->clear();
     ui->msgsTextEdit->append("<span style=\"color: red\">Disconnected from server</span>");
 
-    ui->connectGroup->setEnabled(true);
     ui->gameNumberLabel->setText("-");
     ui->roundNumberLabel->setText("0");
     ui->letterLabel->setText("");
     ui->startGameBox->setEnabled(false);
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(false);
+    ui->connectGroup->setEnabled(true);
 }
 
 
@@ -322,7 +316,10 @@ void MyWidget::handleShowMyRank(QString str){
     QString points = QString(n1)+QString(n2)+QString(n3);
 
     QString infoBox = "Your rank:  " + QString(rank) + " Total points: " + points;
-    QMessageBox::information(this, "Rank", infoBox); // popup
+
+    ui->msgsTextEdit->clear();
+    ui->msgsTextEdit->append(infoBox);
+    //QMessageBox::information(this, "Rank", infoBox); // popup
 
     if (isMaster) isMaster = false;
 
@@ -332,6 +329,9 @@ void MyWidget::handleShowMyRank(QString str){
     ui->startGameBox->setEnabled(false);
     ui->startGameBtn->setEnabled(false);
     ui->talkGroup->setEnabled(false);
+
+    timerOn = false;
+    clearTimerCounting(0);
 
     // reload game list
     QString reload = "L";
