@@ -1,4 +1,4 @@
-### client-server game (unfinished)
+### client-server game
 
 to run server:
 
